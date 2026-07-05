@@ -3,6 +3,8 @@ import Link from 'next/link'
 import { FootprintChart } from '@/components/footprint-chart'
 import { SiteNav } from '@/components/site-nav'
 import { Badge, Card, LinkButton } from '@/components/ui'
+import { Code } from '@/components/code'
+import { GitHubIcon } from '@/components/github-icon'
 
 const FEATURES = [
   {
@@ -15,7 +17,7 @@ const FEATURES = [
   },
   {
     title: 'One file to deploy',
-    body: 'PocketBase-style: a single 57 MB executable with no Node, npm, or Docker on the target machine. Postgres binaries (12 MB) auto-download on first run.',
+    body: 'A single 57 MB executable with no Node, npm, or Docker on the target machine. Postgres binaries (12 MB) auto-download on first run.',
   },
   {
     title: 'Your migrations stay portable',
@@ -57,18 +59,19 @@ export default function Home() {
         {/* hero */}
         <section className="flex flex-col items-center py-24 text-center">
           <Image src="/logo.svg" alt="tinbase logo" width={88} height={88} priority />
-          <Badge className="mt-8">~65% of the supabase-js surface · MIT</Badge>
+          <Badge className="mt-8">The Supabase backend, without Docker · Open source (MIT)</Badge>
           <h1 className="mt-6 max-w-3xl text-balance text-5xl font-bold tracking-tight sm:text-6xl">
             The Supabase backend that fits in a <span className="text-emerald-400">tin</span>
           </h1>
           <p className="mt-6 max-w-2xl text-pretty text-lg text-zinc-400">
-            PocketBase ergonomics, Supabase compatibility. One small binary, real Postgres,
-            44 MB of RAM — and the official supabase-js SDK works unchanged. No Docker.
+            A Supabase-compatible backend in a single 57 MB binary — real Postgres with Row Level
+            Security, Auth, Storage, and Realtime. The official supabase-js SDK works unchanged.
+            No Docker.
           </p>
           <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
             <LinkButton href="/docs">Get started</LinkButton>
             <LinkButton variant="outline" href="https://github.com/sanketsahu/tinbase">
-              Star on GitHub
+              <GitHubIcon /> Star on GitHub
             </LinkButton>
           </div>
           <code className="mt-8 rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2.5 font-mono text-sm text-emerald-300">
@@ -124,9 +127,7 @@ export default function Home() {
                 Read the docs →
               </Link>
             </div>
-            <pre className="overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-900 p-6 font-mono text-[13px] leading-relaxed text-zinc-300">
-              {CODE}
-            </pre>
+            <Code code={CODE} lang="ts" />
           </div>
         </section>
 
@@ -146,15 +147,32 @@ export default function Home() {
 
       <footer className="border-t border-zinc-800/80 py-10">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 text-sm text-zinc-500">
-          <span>MIT © Sanket Sahu</span>
-          <div className="flex gap-6">
+          <span>
+            Built by{' '}
+            <a href="https://x.com/sanketsahu" className="font-medium text-zinc-300 hover:text-white">
+              Sanket Sahu (@sanketsahu)
+            </a>{' '}
+            · MIT
+          </span>
+          <div className="flex items-center gap-6">
             <Link href="/docs" className="hover:text-zinc-300">Docs</Link>
-            <a href="https://github.com/sanketsahu/tinbase" className="hover:text-zinc-300">GitHub</a>
             <a
               href="https://github.com/sanketsahu/tinbase/blob/main/bench/footprint.ts"
               className="hover:text-zinc-300"
             >
               Benchmarks
+            </a>
+            <a href="https://x.com/sanketsahu" aria-label="Sanket Sahu on X" className="hover:text-zinc-300">
+              <svg viewBox="0 0 24 24" fill="currentColor" className="size-4" aria-hidden="true">
+                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+              </svg>
+            </a>
+            <a
+              href="https://github.com/sanketsahu"
+              aria-label="Sanket Sahu on GitHub"
+              className="flex items-center hover:text-zinc-300"
+            >
+              <GitHubIcon />
             </a>
           </div>
         </div>

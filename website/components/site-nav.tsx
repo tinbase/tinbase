@@ -1,5 +1,6 @@
 import Image from 'next/image'
 import Link from 'next/link'
+import { GitHubIcon } from '@/components/github-icon'
 
 export function SiteNav() {
   return (
@@ -18,9 +19,9 @@ export function SiteNav() {
           </Link>
           <a
             href="https://github.com/sanketsahu/tinbase"
-            className="rounded-md px-3 py-1.5 text-zinc-300 hover:bg-zinc-800/60 hover:text-white"
+            className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-zinc-300 hover:bg-zinc-800/60 hover:text-white"
           >
-            GitHub
+            <GitHubIcon /> GitHub
           </a>
         </div>
       </nav>

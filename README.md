@@ -4,7 +4,7 @@
 
 A pure-JS, Docker-free Supabase backend built on [PGlite](https://pglite.dev) (Postgres compiled to WASM). It speaks the same wire protocols as hosted Supabase, so the **official `@supabase/supabase-js` SDK works unchanged** - REST, Auth, Storage, and Realtime.
 
-Think PocketBase ergonomics ("one command and it just works"), but 1:1 with Supabase's APIs and migration conventions.
+One command, one small binary, real Postgres with Row Level Security - and 1:1 with Supabase's APIs and migration conventions.
 
 ```
 npx tinbase start
@@ -130,6 +130,7 @@ Measured on an Apple Silicon Mac (48 GB), macOS 15. Same workload for all three:
 
 | | tinbase (single binary) | tinbase (native, Node) | tinbase (wasm) | PocketBase v0.39.5 | Supabase local (CLI 2.40) |
 | --- | --- | --- | --- | --- | --- |
+| Database | real Postgres 17 + RLS | real Postgres 17 + RLS | real Postgres (PGlite) + RLS | SQLite | Postgres 17 |
 | Runtime memory at boot | 44 MB | 53 MB | 573 MB | 16 MB | 1,441 MB |
 | Runtime memory after workload | 64 MB | 96 MB | 347 MB¹ | 25 MB | 1,626 MB |
 | Data on disk (1k rows) | 38 MB | 38 MB | 39 MB | 7 MB | 70 MB |

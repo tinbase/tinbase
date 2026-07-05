@@ -1,19 +1,23 @@
 <svg width="760" height="248" viewBox="0 0 760 248" fill="none" xmlns="http://www.w3.org/2000/svg" font-family="ui-sans-serif,system-ui,-apple-system,sans-serif">
   <text x="16" y="26" font-size="14" font-weight="600" fill="#7d8590">Memory under load (MB) — 1,000 inserts + 1,000 filtered reads</text>
   <!-- PocketBase -->
-  <text x="176" y="66" font-size="13" fill="#7d8590" text-anchor="end">PocketBase</text>
+  <text x="176" y="60" font-size="13" fill="#7d8590" text-anchor="end">PocketBase</text>
+  <text x="176" y="73" font-size="10" fill="#7d8590" fill-opacity="0.75" text-anchor="end">SQLite</text>
   <path d="M186 52h4.6a3 3 0 0 1 3 3v14a3 3 0 0 1-3 3H186z" fill="#71717a"/>
   <text x="204" y="66" font-size="13" fill="#7d8590">25</text>
   <!-- tinbase binary -->
-  <text x="176" y="104" font-size="13" font-weight="600" fill="#059669" text-anchor="end">tinbase (binary)</text>
+  <text x="176" y="98" font-size="13" font-weight="600" fill="#059669" text-anchor="end">tinbase (binary)</text>
+  <text x="176" y="111" font-size="10" fill="#7d8590" fill-opacity="0.75" text-anchor="end">real Postgres + RLS</text>
   <path d="M186 90h19a3 3 0 0 1 3 3v14a3 3 0 0 1-3 3h-19z" fill="#059669"/>
   <text x="216" y="104" font-size="13" fill="#7d8590">64</text>
   <!-- tinbase wasm -->
-  <text x="176" y="142" font-size="13" font-weight="600" fill="#059669" text-anchor="end">tinbase (wasm)</text>
+  <text x="176" y="136" font-size="13" font-weight="600" fill="#059669" text-anchor="end">tinbase (wasm)</text>
+  <text x="176" y="149" font-size="10" fill="#7d8590" fill-opacity="0.75" text-anchor="end">real Postgres + RLS</text>
   <path d="M186 128h117a3 3 0 0 1 3 3v14a3 3 0 0 1-3 3H186z" fill="#059669" fill-opacity="0.55"/>
   <text x="314" y="142" font-size="13" fill="#7d8590">347</text>
   <!-- Supabase local -->
-  <text x="176" y="180" font-size="13" fill="#7d8590" text-anchor="end">Supabase local</text>
+  <text x="176" y="174" font-size="13" fill="#7d8590" text-anchor="end">Supabase local</text>
+  <text x="176" y="187" font-size="10" fill="#7d8590" fill-opacity="0.75" text-anchor="end">Postgres · 12 containers</text>
   <path d="M186 166h557a3 3 0 0 1 3 3v14a3 3 0 0 1-3 3H186z" fill="#71717a"/>
   <text x="700" y="180" font-size="13" fill="#7d8590" text-anchor="end" font-weight="600">1,626</text>
   <text x="16" y="224" font-size="11.5" fill="#7d8590">Physical footprint of the whole process tree (vmmap / docker stats), Apple Silicon · macOS 15 · bench/footprint.ts</text>

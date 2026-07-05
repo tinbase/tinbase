@@ -8,10 +8,10 @@
 import { useState } from 'react'
 
 const DATA = [
-  { name: 'PocketBase', mb: 25, self: false, detail: 'Go binary + SQLite · v0.39.5' },
-  { name: 'tinbase (binary)', mb: 64, self: true, detail: 'single file + embedded Postgres 17' },
-  { name: 'tinbase (wasm)', mb: 347, self: true, detail: 'PGlite — same engine that runs in the browser' },
-  { name: 'Supabase local', mb: 1626, self: false, detail: '12 Docker containers · CLI 2.40' },
+  { name: 'PocketBase', db: 'SQLite', mb: 25, self: false, detail: 'Go binary embedding SQLite · v0.39.5' },
+  { name: 'tinbase (binary)', db: 'real Postgres + RLS', mb: 64, self: true, detail: 'single file · real Postgres 17 with RLS' },
+  { name: 'tinbase (wasm)', db: 'real Postgres + RLS', mb: 347, self: true, detail: 'PGlite · real Postgres with RLS, runs in the browser' },
+  { name: 'Supabase local', db: 'Postgres', mb: 1626, self: false, detail: '12 Docker containers · CLI 2.40' },
 ]
 const MAX = Math.max(...DATA.map((d) => d.mb))
 
@@ -27,17 +27,15 @@ export function FootprintChart() {
         {DATA.map((d, i) => (
           <div
             key={d.name}
-            className="group relative grid grid-cols-[9.5rem_1fr] items-center gap-3 sm:grid-cols-[11rem_1fr]"
+            className="group relative grid grid-cols-[9.5rem_1fr] items-center gap-3 sm:grid-cols-[12rem_1fr]"
             onMouseEnter={() => setHover(i)}
             onMouseLeave={() => setHover(null)}
           >
-            <span
-              className={
-                'truncate text-right text-sm ' +
-                (d.self ? 'font-semibold text-emerald-400' : 'text-zinc-400')
-              }
-            >
-              {d.name}
+            <span className="truncate text-right">
+              <span className={'text-sm ' + (d.self ? 'font-semibold text-emerald-400' : 'text-zinc-400')}>
+                {d.name}
+              </span>
+              <span className="block text-[11px] leading-tight text-zinc-500">{d.db}</span>
             </span>
             <div className="relative flex h-6 items-center">
               <div

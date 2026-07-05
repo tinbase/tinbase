@@ -1,4 +1,5 @@
 import { SiteNav } from '@/components/site-nav'
+import { Code } from '@/components/code'
 
 const SECTIONS = [
   { id: 'getting-started', label: 'Getting started' },
@@ -19,12 +20,8 @@ function H2({ id, children }: { id: string; children: React.ReactNode }) {
   )
 }
 
-function Pre({ children }: { children: string }) {
-  return (
-    <pre className="overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-900 p-4 font-mono text-[13px] leading-relaxed text-zinc-300">
-      {children}
-    </pre>
-  )
+function Pre({ children, lang = 'bash' }: { children: string; lang?: string }) {
+  return <Code code={children} lang={lang} className="rounded-lg p-4" />
 }
 
 function P({ children }: { children: React.ReactNode }) {
@@ -70,7 +67,7 @@ export default function Docs() {
             conventions and tracking table as the Supabase CLI — so they remain portable to hosted
             Supabase. Then point the official SDK at it:
           </P>
-          <Pre>{`import { createClient } from '@supabase/supabase-js'
+          <Pre lang="ts">{`import { createClient } from '@supabase/supabase-js'
 const supabase = createClient('http://127.0.0.1:54321', ANON_KEY)`}</Pre>
 
           <H2 id="cli">CLI reference</H2>
@@ -120,7 +117,7 @@ tinbase keys       # print anon / service_role keys
             <code className={IC}>request.jwt.claims</code> applied, so policies behave exactly like
             hosted Supabase:
           </P>
-          <Pre>{`create policy "own rows" on todos
+          <Pre lang="sql">{`create policy "own rows" on todos
   for all to authenticated
   using (user_id = auth.uid())
   with check (user_id = auth.uid());`}</Pre>
@@ -131,7 +128,7 @@ tinbase keys       # print anon / service_role keys
             Serve it over HTTP in Node, or hand it to supabase-js as a custom fetch and run the whole
             backend in-process — in the browser, PGlite persists to IndexedDB/OPFS:
           </P>
-          <Pre>{`import { createBackend } from 'tinbase'
+          <Pre lang="ts">{`import { createBackend } from 'tinbase'
 
 const backend = await createBackend({
   // dataDir: 'idb://my-app'   <- browser persistence
@@ -184,8 +181,9 @@ const supabase = createClient('http://localhost', backend.anonKey, {
             <a className="text-emerald-400 hover:text-emerald-300" href="https://github.com/sanketsahu/tinbase/blob/main/bench/results.json">
               bench/results.json
             </a>
-            . Summary: tinbase (binary) 44 MB boot / 64 MB under load; PocketBase 16 / 25 MB; Supabase
-            local 1,441 / 1,626 MB across 12 containers.
+            . Summary: tinbase (binary, real Postgres with RLS) 44 MB boot / 64 MB under load;
+            PocketBase (SQLite) 16 / 25 MB; Supabase local (Postgres) 1,441 / 1,626 MB across 12
+            containers.
           </P>
         </main>
       </div>
