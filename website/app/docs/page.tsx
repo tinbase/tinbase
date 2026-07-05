@@ -31,7 +31,12 @@ function P({ children }: { children: React.ReactNode }) {
 
 const IC = 'rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-[0.85em] text-emerald-300'
 
-export const metadata = { title: 'Docs — tinbase' }
+export const metadata = {
+  title: 'Docs',
+  description:
+    'Getting started, CLI reference, engines, single-binary builds, Row Level Security, embedding in the browser, API coverage, and benchmarks for tinbase.',
+  alternates: { canonical: '/docs' },
+}
 
 export default function Docs() {
   return (
