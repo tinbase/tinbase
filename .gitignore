@@ -4,3 +4,4 @@ dist/
 *.tmp.ts
 *.tmp.mts
 .supalite/
+bench/.tmp-*

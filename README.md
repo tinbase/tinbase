@@ -101,6 +101,44 @@ create policy "own rows" on todos
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 ```
 
+## Footprint: tinbase vs PocketBase vs Supabase local
+
+Measured on an Apple Silicon Mac (48 GB), macOS 15. Same workload for all three: boot with one migrated table, then 1,000 single-row inserts followed by 1,000 filtered list queries. Memory is physical footprint (`vmmap`) for native processes and the sum of `docker stats` for containers. Reproduce with [`bench/footprint.ts`](bench/footprint.ts); raw numbers in [`bench/results.json`](bench/results.json).
+
+| | tinbase | PocketBase v0.39.5 | Supabase local (CLI 2.40) |
+| --- | --- | --- | --- |
+| Runtime memory at boot | 573 MB | 16 MB | 1,441 MB |
+| Runtime memory after workload | 347 MB¹ | 25 MB | 1,626 MB |
+| Data on disk (1k rows) | 39 MB | 7 MB | 70 MB |
+| Install size | 26 MB² | 30 MB | 2,291 MB³ |
+| Processes | 1 | 1 | 12 containers + Docker |
+| 1,000 inserts | 0.8 s | 0.3 s | 1.1 s |
+| 1,000 filtered reads | 0.8 s | 0.3 s | 1.0 s |
+
+¹ PGlite's WASM instantiation peaks at boot, then the OS reclaims pages; steady state under load is ~350 MB.
+² `dist` + `@electric-sql/pglite`, excluding the Node runtime you already have.
+³ Sum of the Docker image sizes the default local stack runs, excluding Docker Desktop itself.
+
+**How to read this honestly:**
+
+- **vs Supabase local**: same SDK, same APIs, ~2.5-4x less memory, ~90x smaller install, one process instead of a 12-container stack, and boots in ~2 s instead of a minute. That's the entire point of the project.
+- **vs PocketBase**: PocketBase is dramatically lighter at runtime - a Go binary embedding SQLite simply costs less than Postgres compiled to WASM on Node. If you want the smallest possible backend and don't need Supabase compatibility, PocketBase is the better tool. tinbase's trade is spending ~350 MB of RAM to get *real Postgres* (RLS, jsonb, FKs, triggers, real SQL migrations) plus wire-compatibility with supabase-js - so the same code and the same migration files move to hosted Supabase when you outgrow local.
+- tinbase's memory is almost entirely the PGlite WASM heap; the API layers add single-digit MB.
+
+## How complete is it?
+
+Rough coverage of the supabase-js SDK surface, measured against what each sub-library can express (all "supported" claims are exercised by the test suite):
+
+| Module | Coverage | Supported | Missing |
+| --- | --- | --- | --- |
+| Database (`postgrest-js`) | ~85% | full filter grammar, embeds (to-one/to-many/m2m/nested/`!inner`), JSON paths, upsert, count, single/maybeSingle, RPC | aggregates in select, full spread embeds, `.explain()`, `.csv()`, geojson |
+| Auth (`auth-js`) | ~40% | email/password, anonymous sign-in, refresh rotation, user updates, admin CRUD | OAuth, magic links, OTP, MFA, SSO/SAML, PKCE, phone auth, email delivery |
+| Storage (`storage-js`) | ~80% | buckets, upload/download, signed URLs + signed uploads, list/move/copy/remove, size/MIME limits | resumable (TUS) uploads, image transformations |
+| Realtime (`realtime-js`) | ~70% | postgres_changes with filters, broadcast (incl. binary), presence, v1+v2 serializers | RLS-filtered fan-out (WALRUS), private channel auth, DB-triggered broadcast |
+| Edge Functions (`functions-js`) | 0% | - | everything (`supabase.functions.invoke()`) |
+
+**Overall: roughly 65% of the SDK surface - but ~90% of what a typical CRUD + auth + storage + realtime app actually calls.** The biggest real-world gaps are OAuth logins and edge functions.
+
 ## Known gaps
 
 - `postgres_changes` does not apply RLS to fan-out (all subscribers see change events); hosted Supabase filters via WALRUS.
