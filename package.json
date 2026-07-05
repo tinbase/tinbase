@@ -14,14 +14,18 @@
     "tinbase": "./dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE",
+    "assets/logo.svg"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/cli.ts start",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build:binary": "npm run build && bun build --compile src/cli.ts --outfile dist-bin/tinbase --external @electric-sql/pglite --define 'process.env.TINBASE_SINGLE_BINARY=\"1\"'"
+    "build:binary": "npm run build && bun build --compile src/cli.ts --outfile dist-bin/tinbase --external @electric-sql/pglite --define 'process.env.TINBASE_SINGLE_BINARY=\"1\"'",
+    "prepublishOnly": "npm run build && npm test"
   },
   "engines": {
     "node": ">=22"
@@ -43,5 +47,13 @@
     "tsx": "^4.23.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sanketsahu/tinbase.git"
+  },
+  "homepage": "https://tinbase.vercel.app",
+  "bugs": {
+    "url": "https://github.com/sanketsahu/tinbase/issues"
   }
 }
