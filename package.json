@@ -1,0 +1,46 @@
+{
+  "name": "tinbase",
+  "version": "0.1.0",
+  "description": "A pure-JS, Docker-free Supabase backend replacement built on PGlite. Wire-compatible with supabase-js.",
+  "type": "module",
+  "author": "Sanket Sahu",
+  "license": "MIT",
+  "exports": {
+    ".": "./dist/index.js",
+    "./node": "./dist/node/index.js"
+  },
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "tinbase": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts start",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "keywords": [
+    "supabase",
+    "pglite",
+    "postgrest",
+    "pocketbase",
+    "wasm",
+    "postgres"
+  ],
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.4"
+  },
+  "devDependencies": {
+    "@supabase/supabase-js": "^2.110.0",
+    "@types/node": "^26.1.0",
+    "tsx": "^4.23.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  }
+}

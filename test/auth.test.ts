@@ -1,0 +1,112 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { createTestEnv, type TestEnv } from './helpers.js'
+
+let env: TestEnv
+
+beforeAll(async () => {
+  env = await createTestEnv()
+})
+
+afterAll(async () => {
+  await env.close()
+})
+
+describe('auth', () => {
+  it('signs up with email/password and returns a session', async () => {
+    const { data, error } = await env.supabase.auth.signUp({
+      email: 'test@example.com',
+      password: 'password123',
+      options: { data: { display_name: 'Tester' } },
+    })
+    expect(error).toBeNull()
+    expect(data.session?.access_token).toBeTruthy()
+    expect(data.user?.email).toBe('test@example.com')
+    expect(data.user?.user_metadata).toEqual({ display_name: 'Tester' })
+    await env.supabase.auth.signOut()
+  })
+
+  it('rejects duplicate signup', async () => {
+    const { error } = await env.supabase.auth.signUp({ email: 'test@example.com', password: 'password123' })
+    expect(error).not.toBeNull()
+    expect(error!.code).toBe('user_already_exists')
+  })
+
+  it('signs in with correct password, rejects wrong one', async () => {
+    const ok = await env.supabase.auth.signInWithPassword({ email: 'test@example.com', password: 'password123' })
+    expect(ok.error).toBeNull()
+    expect(ok.data.session?.refresh_token).toBeTruthy()
+    await env.supabase.auth.signOut()
+
+    const bad = await env.supabase.auth.signInWithPassword({ email: 'test@example.com', password: 'wrong' })
+    expect(bad.error).not.toBeNull()
+    expect(bad.error!.code).toBe('invalid_credentials')
+  })
+
+  it('getUser returns the authenticated user', async () => {
+    await env.supabase.auth.signInWithPassword({ email: 'test@example.com', password: 'password123' })
+    const { data, error } = await env.supabase.auth.getUser()
+    expect(error).toBeNull()
+    expect(data.user?.email).toBe('test@example.com')
+    await env.supabase.auth.signOut()
+  })
+
+  it('updates user metadata and password', async () => {
+    await env.supabase.auth.signInWithPassword({ email: 'test@example.com', password: 'password123' })
+    const upd = await env.supabase.auth.updateUser({ data: { plan: 'pro' }, password: 'newpassword456' })
+    expect(upd.error).toBeNull()
+    expect(upd.data.user?.user_metadata).toMatchObject({ display_name: 'Tester', plan: 'pro' })
+    await env.supabase.auth.signOut()
+
+    const relogin = await env.supabase.auth.signInWithPassword({
+      email: 'test@example.com',
+      password: 'newpassword456',
+    })
+    expect(relogin.error).toBeNull()
+    await env.supabase.auth.signOut()
+  })
+
+  it('refreshes a session with the refresh token', async () => {
+    const login = await env.supabase.auth.signInWithPassword({
+      email: 'test@example.com',
+      password: 'newpassword456',
+    })
+    const refreshToken = login.data.session!.refresh_token
+    const { data, error } = await env.supabase.auth.refreshSession({ refresh_token: refreshToken })
+    expect(error).toBeNull()
+    expect(data.session?.access_token).toBeTruthy()
+    expect(data.session?.refresh_token).not.toBe(refreshToken)
+
+    // old refresh token is revoked
+    const reuse = await env.supabase.auth.refreshSession({ refresh_token: refreshToken })
+    expect(reuse.error).not.toBeNull()
+    await env.supabase.auth.signOut()
+  })
+
+  it('signs in anonymously', async () => {
+    const { data, error } = await env.supabase.auth.signInAnonymously()
+    expect(error).toBeNull()
+    expect(data.user?.is_anonymous).toBe(true)
+    await env.supabase.auth.signOut()
+  })
+
+  it('admin can list, create, and delete users', async () => {
+    const list = await env.admin.auth.admin.listUsers()
+    expect(list.error).toBeNull()
+    expect(list.data.users.length).toBeGreaterThanOrEqual(1)
+
+    const created = await env.admin.auth.admin.createUser({
+      email: 'admin-made@example.com',
+      password: 'password123',
+      email_confirm: true,
+    })
+    expect(created.error).toBeNull()
+
+    const del = await env.admin.auth.admin.deleteUser(created.data.user!.id)
+    expect(del.error).toBeNull()
+  })
+
+  it('admin endpoints reject anon key', async () => {
+    const { error } = await env.supabase.auth.admin.listUsers()
+    expect(error).not.toBeNull()
+  })
+})
