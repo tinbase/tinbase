@@ -24,12 +24,16 @@ const FEATURES = [
     body: 'Reads supabase/migrations/*.sql and seed.sql exactly like the Supabase CLI, tracked in the same table. Outgrow tinbase? Push the same files to hosted Supabase.',
   },
   {
+    title: 'Edge Functions & full auth',
+    body: 'supabase.functions.invoke() runs your handlers in-process. Email/password, anonymous, OTP, magic links, and password recovery — all through supabase-js.',
+  },
+  {
     title: 'Runs in the browser',
     body: 'Every service is a pure fetch handler. Hand it to supabase-js as a custom fetch and the entire backend — database included — runs in-process, no server.',
   },
   {
-    title: 'Built-in admin dashboard',
-    body: 'A PocketBase-style admin UI at /_/ - browse tables, run SQL, inspect users and buckets. Ships inside the binary, no separate studio install.',
+    title: 'Built-in Studio',
+    body: 'A Supabase-Studio-style dashboard at /_/ — full row CRUD, SQL editor, user management, and storage. Ships inside the binary, nothing extra to install.',
   },
   {
     title: 'Zero runtime dependencies',
