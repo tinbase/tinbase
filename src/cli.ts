@@ -173,6 +173,7 @@ async function main(): Promise<void> {
   tinbase running
 
            API URL: ${server.url}
+          Admin UI: ${server.url}/_/
             Engine: ${opts.engine === 'native' ? 'native postgres' : `PGlite (${opts.memory ? 'in-memory' : opts.dataDir})`}
            Storage: ${opts.storageDir}
         Migrations: ${project.migrations.length} file(s)

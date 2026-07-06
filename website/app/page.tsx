@@ -28,6 +28,10 @@ const FEATURES = [
     body: 'Every service is a pure fetch handler. Hand it to supabase-js as a custom fetch and the entire backend — database included — runs in-process, no server.',
   },
   {
+    title: 'Built-in admin dashboard',
+    body: 'A PocketBase-style admin UI at /_/ - browse tables, run SQL, inspect users and buckets. Ships inside the binary, no separate studio install.',
+  },
+  {
     title: 'Zero runtime dependencies',
     body: 'One npm dependency (@electric-sql/pglite). JWTs via WebCrypto, a hand-rolled WebSocket server, and a pure-Node Postgres wire client.',
   },

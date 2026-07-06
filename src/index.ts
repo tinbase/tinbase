@@ -7,6 +7,8 @@
  * Node, or call it in-process in the browser by passing it as supabase-js's
  * `global.fetch`.
  */
+import { AdminApi } from './admin/api.js'
+import { ADMIN_HTML } from './admin/ui.js'
 import { AuthHandler } from './auth/handler.js'
 import { FunctionsHandler, type EdgeFunction } from './functions/handler.js'
 import { Database } from './db/database.js'
@@ -79,6 +81,7 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
   const storage = new StorageHandler(db, config.storageDriver ?? new MemoryStorageDriver(), { jwtSecret })
   const realtime = new RealtimeEngine(db)
   await realtime.start()
+  const admin = new AdminApi(db)
 
   const fnMap =
     config.functions instanceof Map
@@ -139,6 +142,10 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
       )
     }
 
+    if (path === '/_' || path === '/_/') {
+      return new Response(ADMIN_HTML, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } })
+    }
+
     // public endpoints that skip apikey checks
     if (path.startsWith('/storage/v1/object/public/') || path.startsWith('/storage/v1/object/sign/')) {
       if (req.method === 'GET' || req.method === 'HEAD') {
@@ -169,6 +176,7 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
     if (ctx instanceof Response) return ctx
 
     if (path.startsWith('/rest/v1')) return withCors(await rest.handle(req, ctx, url))
+    if (path.startsWith('/admin/v1')) return withCors(await admin.handle(req, ctx, url))
     if (path.startsWith('/functions/v1')) return withCors(await functions.handle(req, ctx, url))
     if (path.startsWith('/storage/v1')) return withCors(await storage.handle(req, ctx, url))
     if (path.startsWith('/realtime/v1')) {

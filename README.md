@@ -114,6 +114,7 @@ const server = await serve(backend, { port: 54321 })
 | Auth (GoTrue) | `/auth/v1` | email/password signup + sign-in, anonymous sign-in, session refresh with rotation, `getUser`, `updateUser`, sign-out, admin user CRUD (service key), GoTrue-shaped errors. JWTs are HS256 via WebCrypto; passwords are PBKDF2 |
 | Storage | `/storage/v1` | bucket CRUD, upload (raw + multipart), download, public objects, signed URLs, signed upload URLs, list with folder entries, move/copy, remove, size/MIME limits. Metadata lives in `storage.objects` with RLS enforced; bytes go through a pluggable driver (fs in Node, memory anywhere) |
 | Edge Functions | `/functions/v1` | `supabase.functions.invoke()` - functions are plain fetch handlers, loaded from `supabase/functions/<name>/index.{js,mjs,ts}` (default export) by the CLI or passed programmatically via `createBackend({ functions })`; each call receives the verified auth context and env keys |
+| Admin UI | `/_/` | PocketBase-style dashboard: table browser with pagination, SQL runner, auth users, storage buckets. One self-contained HTML file (works in the single binary); log in with the service_role key |
 | Realtime | `/realtime/v1` | Phoenix protocol (v1 JSON and v2 array/binary serializers), `postgres_changes` (INSERT/UPDATE/DELETE, filters) fed by triggers + `pg_notify`, broadcast (incl. binary payloads), presence. WebSocket server is a ~150-line RFC 6455 implementation - no `ws` dependency |
 
 ### RLS works like real Supabase

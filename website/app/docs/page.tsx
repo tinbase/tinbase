@@ -8,6 +8,7 @@ const SECTIONS = [
   { id: 'cli', label: 'CLI reference' },
   { id: 'engines', label: 'Engines' },
   { id: 'single-binary', label: 'Single binary' },
+  { id: 'admin', label: 'Admin UI' },
   { id: 'rls', label: 'Row Level Security' },
   { id: 'embedding', label: 'Embedding & browser' },
   { id: 'coverage', label: 'API coverage' },
@@ -143,6 +144,14 @@ tinbase keys       # print anon / service_role keys
             One compiled executable — no Node, npm, or Docker on the target machine. It defaults to
             the native engine and serves REST, Auth, Storage, and Realtime WebSockets at 44 MB of RAM
             at boot, 64 MB under load.
+          </P>
+
+          <H2 id="admin">Admin UI</H2>
+          <P>
+            A PocketBase-style dashboard ships at <code className={IC}>/_/</code> - browse tables
+            with pagination, run SQL, and inspect auth users and storage buckets. Log in with the{' '}
+            <code className={IC}>service_role</code> key printed at startup. It is a single
+            self-contained HTML file, so it works in the compiled binary too.
           </P>
 
           <H2 id="rls">Row Level Security</H2>
