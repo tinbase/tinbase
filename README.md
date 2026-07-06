@@ -70,7 +70,7 @@ tinbase keys       # print anon / service_role keys
 
 Both engines run the identical bootstrap, migrations, RLS, and realtime CDC - the test suite passes on both (`TINBASE_TEST_ENGINE=native npm test`).
 
-### Single-binary build (PocketBase-style)
+### Single-binary build
 
 ```bash
 npm run build:binary   # requires bun; emits dist-bin/tinbase (~57 MB)
@@ -114,7 +114,7 @@ const server = await serve(backend, { port: 54321 })
 | Auth (GoTrue) | `/auth/v1` | email/password signup + sign-in, anonymous sign-in, session refresh with rotation, `getUser`, `updateUser`, sign-out, admin user CRUD (service key), GoTrue-shaped errors. JWTs are HS256 via WebCrypto; passwords are PBKDF2 |
 | Storage | `/storage/v1` | bucket CRUD, upload (raw + multipart), download, public objects, signed URLs, signed upload URLs, list with folder entries, move/copy, remove, size/MIME limits. Metadata lives in `storage.objects` with RLS enforced; bytes go through a pluggable driver (fs in Node, memory anywhere) |
 | Edge Functions | `/functions/v1` | `supabase.functions.invoke()` - functions are plain fetch handlers, loaded from `supabase/functions/<name>/index.{js,mjs,ts}` (default export) by the CLI or passed programmatically via `createBackend({ functions })`; each call receives the verified auth context and env keys |
-| Admin UI | `/_/` | PocketBase-style dashboard: table browser with pagination, SQL runner, auth users, storage buckets. One self-contained HTML file (works in the single binary); log in with the service_role key |
+| Studio (Admin UI) | `/_/` | A Supabase-Studio-style dashboard (React + Radix + Tailwind): Table Editor with full row CRUD, SQL editor, user management, bucket/object CRUD, and a database overview. One self-contained HTML file (works in the single binary); log in with the service_role key |
 | Realtime | `/realtime/v1` | Phoenix protocol (v1 JSON and v2 array/binary serializers), `postgres_changes` (INSERT/UPDATE/DELETE, filters) fed by triggers + `pg_notify`, broadcast (incl. binary payloads), presence. WebSocket server is a ~150-line RFC 6455 implementation - no `ws` dependency |
 
 ### RLS works like real Supabase
@@ -126,6 +126,18 @@ create policy "own rows" on todos
   for all to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 ```
+
+## Studio
+
+tinbase ships with a built-in dashboard at [`/_/`](http://127.0.0.1:54321/_/) - the same shape as Supabase Studio:
+
+- **Table Editor** - browse tables with pagination and row counts; insert, edit, and delete rows (type-aware, primary-key based)
+- **SQL Editor** - run arbitrary SQL with result grids and Postgres error details
+- **Authentication** - list, create, delete users and reset passwords
+- **Storage** - create/delete buckets, upload/delete objects, toggle public access
+- **Database** - stats overview and applied migrations
+
+It is a React app compiled to a single self-contained HTML file, so it also works inside the single binary. Sign in with the `service_role` key printed at startup.
 
 ## Footprint: tinbase vs PocketBase vs Supabase local
 

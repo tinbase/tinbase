@@ -8,7 +8,8 @@ const SECTIONS = [
   { id: 'cli', label: 'CLI reference' },
   { id: 'engines', label: 'Engines' },
   { id: 'single-binary', label: 'Single binary' },
-  { id: 'admin', label: 'Admin UI' },
+  { id: 'studio', label: 'Studio' },
+  { id: 'functions', label: 'Edge Functions' },
   { id: 'rls', label: 'Row Level Security' },
   { id: 'embedding', label: 'Embedding & browser' },
   { id: 'coverage', label: 'API coverage' },
@@ -146,13 +147,55 @@ tinbase keys       # print anon / service_role keys
             at boot, 64 MB under load.
           </P>
 
-          <H2 id="admin">Admin UI</H2>
+          <H2 id="studio">Studio</H2>
           <P>
-            A PocketBase-style dashboard ships at <code className={IC}>/_/</code> - browse tables
-            with pagination, run SQL, and inspect auth users and storage buckets. Log in with the{' '}
-            <code className={IC}>service_role</code> key printed at startup. It is a single
-            self-contained HTML file, so it works in the compiled binary too.
+            A built-in dashboard ships at <code className={IC}>/_/</code>, shaped like Supabase
+            Studio (React + Radix + Tailwind). Log in with the{' '}
+            <code className={IC}>service_role</code> key printed at startup:
           </P>
+          <ul className="ml-5 list-disc space-y-1 text-neutral-400 text-zinc-400">
+            <li>
+              <b className="text-zinc-200">Table Editor</b> — browse tables with pagination and row
+              counts; insert, edit, and delete rows
+            </li>
+            <li>
+              <b className="text-zinc-200">SQL Editor</b> — run SQL with result grids and Postgres
+              error details
+            </li>
+            <li>
+              <b className="text-zinc-200">Authentication</b> — list, create, delete users, reset
+              passwords
+            </li>
+            <li>
+              <b className="text-zinc-200">Storage</b> — create/delete buckets, upload/delete
+              objects, toggle public access
+            </li>
+            <li>
+              <b className="text-zinc-200">Database</b> — stats overview and applied migrations
+            </li>
+          </ul>
+          <P>
+            It compiles to a single self-contained HTML file, so it works inside the single binary
+            too.
+          </P>
+
+          <H2 id="functions">Edge Functions</H2>
+          <P>
+            <code className={IC}>supabase.functions.invoke()</code> runs your handlers in-process.
+            A function is any fetch handler; the CLI loads them from{' '}
+            <code className={IC}>supabase/functions/&lt;name&gt;/index.&#123;ts,js,mjs&#125;</code>{' '}
+            (default export), or you pass them to{' '}
+            <code className={IC}>createBackend(&#123; functions &#125;)</code>. Each call receives the
+            verified auth context and the project&apos;s env keys.
+          </P>
+          <Pre lang="ts">{`// supabase/functions/hello/index.mjs
+export default async function handler(req, ctx) {
+  const { name = 'world' } = await req.json().catch(() => ({}))
+  return new Response(
+    JSON.stringify({ message: \`Hello \${name}!\`, role: ctx.auth.role }),
+    { headers: { 'content-type': 'application/json' } }
+  )
+}`}</Pre>
 
           <H2 id="rls">Row Level Security</H2>
           <P>
