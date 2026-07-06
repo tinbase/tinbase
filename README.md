@@ -113,6 +113,7 @@ const server = await serve(backend, { port: 54321 })
 | REST (PostgREST) | `/rest/v1` | select with embedded resources (to-one, to-many, many-to-many via junction, nested, `!inner`, aliases, hints, casts, JSON paths), all common filter operators incl. `or`/`and` trees, full-text search, order/limit/offset (top-level and per-embed), `single`/`maybeSingle`, `count`, insert/bulk insert, upsert (merge/ignore), update, delete, `Prefer` handling, RPC (scalar, `setof`, void, filters on results), PostgREST-shaped errors |
 | Auth (GoTrue) | `/auth/v1` | email/password signup + sign-in, anonymous sign-in, session refresh with rotation, `getUser`, `updateUser`, sign-out, admin user CRUD (service key), GoTrue-shaped errors. JWTs are HS256 via WebCrypto; passwords are PBKDF2 |
 | Storage | `/storage/v1` | bucket CRUD, upload (raw + multipart), download, public objects, signed URLs, signed upload URLs, list with folder entries, move/copy, remove, size/MIME limits. Metadata lives in `storage.objects` with RLS enforced; bytes go through a pluggable driver (fs in Node, memory anywhere) |
+| Edge Functions | `/functions/v1` | `supabase.functions.invoke()` - functions are plain fetch handlers, loaded from `supabase/functions/<name>/index.{js,mjs,ts}` (default export) by the CLI or passed programmatically via `createBackend({ functions })`; each call receives the verified auth context and env keys |
 | Realtime | `/realtime/v1` | Phoenix protocol (v1 JSON and v2 array/binary serializers), `postgres_changes` (INSERT/UPDATE/DELETE, filters) fed by triggers + `pg_notify`, broadcast (incl. binary payloads), presence. WebSocket server is a ~150-line RFC 6455 implementation - no `ws` dependency |
 
 ### RLS works like real Supabase
@@ -162,9 +163,9 @@ Rough coverage of the supabase-js SDK surface, measured against what each sub-li
 | Auth (`auth-js`) | ~40% | email/password, anonymous sign-in, refresh rotation, user updates, admin CRUD | OAuth, magic links, OTP, MFA, SSO/SAML, PKCE, phone auth, email delivery |
 | Storage (`storage-js`) | ~80% | buckets, upload/download, signed URLs + signed uploads, list/move/copy/remove, size/MIME limits | resumable (TUS) uploads, image transformations |
 | Realtime (`realtime-js`) | ~70% | postgres_changes with filters, broadcast (incl. binary), presence, v1+v2 serializers | RLS-filtered fan-out (WALRUS), private channel auth, DB-triggered broadcast |
-| Edge Functions (`functions-js`) | 0% | - | everything (`supabase.functions.invoke()`) |
+| Edge Functions (`functions-js`) | ~60% | `invoke()` with JSON/text bodies, auth context, project-dir loading | Deno runtime compat, import maps, `supabase functions deploy` |
 
-**Overall: roughly 65% of the SDK surface - but ~90% of what a typical CRUD + auth + storage + realtime app actually calls.** The biggest real-world gaps are OAuth logins and edge functions.
+**Overall: roughly 70% of the SDK surface - but ~90% of what a typical CRUD + auth + storage + realtime app actually calls.** The biggest real-world gaps are OAuth logins and edge functions.
 
 ## Known gaps
 

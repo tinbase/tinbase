@@ -12,6 +12,7 @@ import { join, resolve } from 'node:path'
 import { createBackend } from './index.js'
 import { createNativeEngine } from './node/native/engine.js'
 import { FsStorageDriver } from './node/fs-driver.js'
+import { loadFunctions } from './node/load-functions.js'
 import { loadSupabaseProject } from './node/project.js'
 import { serve } from './node/server.js'
 import { serveBun } from './node/bun-server.js'
@@ -120,6 +121,7 @@ async function main(): Promise<void> {
   }
 
   const project = await loadSupabaseProject(opts.dir)
+  const functions = await loadFunctions(opts.dir)
   if (opts.dataDir) await mkdir(opts.dataDir, { recursive: true })
   await mkdir(opts.storageDir, { recursive: true })
 
@@ -138,6 +140,7 @@ async function main(): Promise<void> {
     siteUrl: `http://${opts.host}:${opts.port}`,
     migrations: project.migrations,
     seedSql: project.seedSql,
+    functions,
     storageDriver: new FsStorageDriver(opts.storageDir),
     log: (msg) => console.log(`  ${msg}`),
   })
@@ -173,6 +176,7 @@ async function main(): Promise<void> {
             Engine: ${opts.engine === 'native' ? 'native postgres' : `PGlite (${opts.memory ? 'in-memory' : opts.dataDir})`}
            Storage: ${opts.storageDir}
         Migrations: ${project.migrations.length} file(s)
+         Functions: ${functions.size > 0 ? [...functions.keys()].join(', ') : 'none'}
 
           anon key: ${backend.anonKey}
   service_role key: ${backend.serviceRoleKey}

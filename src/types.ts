@@ -29,6 +29,8 @@ export interface BackendConfig {
   seedSql?: string
   /** Where object storage bytes live. Default: in-memory. Node CLI passes a fs driver. */
   storageDriver?: StorageDriver
+  /** Edge functions: name → fetch handler, served at /functions/v1/<name>. */
+  functions?: Map<string, import('./functions/handler.js').EdgeFunction> | Record<string, import('./functions/handler.js').EdgeFunction>
   /** Print startup/debug logs. */
   log?: (msg: string) => void
 }

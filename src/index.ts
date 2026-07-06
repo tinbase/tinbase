@@ -8,6 +8,7 @@
  * `global.fetch`.
  */
 import { AuthHandler } from './auth/handler.js'
+import { FunctionsHandler, type EdgeFunction } from './functions/handler.js'
 import { Database } from './db/database.js'
 import { signJwt, verifyJwt } from './jwt.js'
 import { RealtimeEngine } from './realtime/engine.js'
@@ -21,12 +22,14 @@ export { Database } from './db/database.js'
 export { MemoryStorageDriver } from './storage/driver.js'
 export { RealtimeEngine, type RealtimeSocketLike } from './realtime/engine.js'
 export { signJwt, verifyJwt, decodeJwt } from './jwt.js'
+export { FunctionsHandler, type EdgeFunction, type FunctionContext } from './functions/handler.js'
 
 export interface TinbaseBackend {
   /** The whole backend as a fetch handler. Pass to supabase-js as global.fetch for in-process use. */
   fetch: (req: Request) => Promise<Response>
   db: Database
   realtime: RealtimeEngine
+  functions: FunctionsHandler
   /** JWT for the anon role — use as supabase-js's supabaseKey. */
   anonKey: string
   /** JWT for the service_role — bypasses RLS. */
@@ -70,6 +73,16 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
   const storage = new StorageHandler(db, config.storageDriver ?? new MemoryStorageDriver(), { jwtSecret })
   const realtime = new RealtimeEngine(db)
   await realtime.start()
+
+  const fnMap =
+    config.functions instanceof Map
+      ? config.functions
+      : new Map(Object.entries(config.functions ?? {}))
+  const functions = new FunctionsHandler(fnMap as Map<string, EdgeFunction>, {
+    SUPABASE_URL: siteUrl,
+    SUPABASE_ANON_KEY: anonKey,
+    SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey,
+  })
 
   async function resolveContext(req: Request, url: URL): Promise<RequestContext | Response> {
     const authz = req.headers.get('authorization')
@@ -146,6 +159,7 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
     if (ctx instanceof Response) return ctx
 
     if (path.startsWith('/rest/v1')) return withCors(await rest.handle(req, ctx, url))
+    if (path.startsWith('/functions/v1')) return withCors(await functions.handle(req, ctx, url))
     if (path.startsWith('/storage/v1')) return withCors(await storage.handle(req, ctx, url))
     if (path.startsWith('/realtime/v1')) {
       return withCors(
@@ -167,6 +181,7 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
     fetch: handle,
     db,
     realtime,
+    functions,
     anonKey,
     serviceRoleKey,
     jwtSecret,

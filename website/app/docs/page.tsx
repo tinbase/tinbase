@@ -190,7 +190,7 @@ const supabase = createClient('http://localhost', backend.anonKey, {
                   ['Auth (auth-js)', '~40%', 'OAuth, magic links, OTP, MFA, SSO'],
                   ['Storage (storage-js)', '~80%', 'resumable uploads, image transforms'],
                   ['Realtime (realtime-js)', '~70%', 'RLS-filtered fan-out, private channels'],
-                  ['Edge Functions', '0%', 'everything'],
+                  ['Edge Functions', '~60%', 'Deno runtime compat, import maps'],
                 ].map(([m, c, g]) => (
                   <tr key={m} className="border-b border-zinc-800/60">
                     <td className="py-2 pr-4 text-zinc-200">{m}</td>
@@ -202,7 +202,7 @@ const supabase = createClient('http://localhost', backend.anonKey, {
             </table>
           </div>
           <P>
-            Roughly 65% of the SDK surface overall — but ~90% of what a typical CRUD + auth + storage
+            Roughly 70% of the SDK surface overall — but ~90% of what a typical CRUD + auth + storage
             + realtime app actually calls.
           </P>
 
