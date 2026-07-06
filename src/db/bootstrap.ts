@@ -4,6 +4,35 @@
  * migration bookkeeping, and the realtime CDC plumbing.
  */
 export const BOOTSTRAP_SQL = `
+-- ── Extensions ─────────────────────────────────────────────────────────────
+-- Supabase enables these by default and migrations lean on them
+-- (uuid_generate_v4(), crypt(), citext, pg_trgm, …). Each is created into the
+-- 'extensions' schema like hosted Supabase; any not available in this engine
+-- build is skipped rather than aborting the whole bootstrap.
+create schema if not exists extensions;
+do $$
+declare ext text;
+begin
+  foreach ext in array array['uuid-ossp','pgcrypto','citext','pg_trgm','ltree','hstore','fuzzystrmatch'] loop
+    begin
+      execute format('create extension if not exists %I with schema extensions', ext);
+    exception when others then
+      -- extension not bundled in this engine; continue
+    end;
+  end loop;
+end $$;
+
+-- Make extension functions resolvable unqualified (uuid_generate_v4(), …) on
+-- the current session (migrations run here) and for future connections.
+do $$
+begin
+  execute 'alter database ' || quote_ident(current_database()) ||
+          ' set search_path to "$user", public, extensions';
+exception when others then
+  -- some engines disallow altering the current database; session SET below still applies
+end $$;
+set search_path to "$user", public, extensions;
+
 -- ── Roles ────────────────────────────────────────────────────────────────
 do $$
 begin
@@ -17,6 +46,11 @@ begin
     create role service_role nologin noinherit bypassrls;
   end if;
 end $$;
+
+grant usage on schema extensions to anon, authenticated, service_role;
+alter role anon set search_path to "$user", public, extensions;
+alter role authenticated set search_path to "$user", public, extensions;
+alter role service_role set search_path to "$user", public, extensions;
 
 grant usage on schema public to anon, authenticated, service_role;
 grant all on all tables in schema public to anon, authenticated, service_role;

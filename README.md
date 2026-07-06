@@ -139,6 +139,10 @@ tinbase ships with a built-in dashboard at [`/_/`](http://127.0.0.1:54321/_/) - 
 
 It is a React app compiled to a single self-contained HTML file, so it also works inside the single binary. Sign in with the `service_role` key printed at startup.
 
+## Extensions
+
+The extensions Supabase enables by default are available out of the box, so migrations that call `uuid_generate_v4()`, `gen_random_uuid()`, `crypt()`, `citext`, `pg_trgm`, and friends just work: **uuid-ossp, pgcrypto, citext, pg_trgm, ltree, hstore, fuzzystrmatch**. They live in the `extensions` schema (like hosted Supabase) and are on the search path, so both qualified and unqualified calls resolve.
+
 ## Footprint: tinbase vs PocketBase vs Supabase local
 
 ![Memory footprint comparison](assets/footprint.svg)
