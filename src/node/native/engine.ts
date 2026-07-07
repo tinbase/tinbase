@@ -6,7 +6,8 @@
  * socket directory (0700), never TCP.
  */
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, appendFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync, appendFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -34,24 +35,53 @@ function target(): string {
   throw new Error(`unsupported platform for native engine: ${process.platform} (use the default PGlite engine)`)
 }
 
-/** Download + unpack Postgres binaries if not already cached. Returns the install dir. */
+/** A binary install is only usable if both the server and its catalog seed are present. */
+function isCompleteInstall(dir: string): boolean {
+  return existsSync(join(dir, 'bin', 'postgres')) && existsSync(join(dir, 'share', 'postgres.bki'))
+}
+
+/** Download + unpack Postgres binaries if not already cached (concurrency-safe). Returns the install dir. */
 export async function ensurePostgres(version = DEFAULT_PG_VERSION, cacheDir?: string, log?: (m: string) => void): Promise<string> {
   const t = target()
   const root = cacheDir ?? join(homedir(), '.cache', 'tinbase')
   const dir = join(root, `postgresql-${version}-${t}`)
-  if (existsSync(join(dir, 'bin', 'postgres'))) return dir
+  if (isCompleteInstall(dir)) return dir
 
+  // Concurrency-safe: multiple test workers / processes may call this at once on
+  // a cold cache. Each downloads + extracts to unique temp paths, then atomically
+  // renames into place — so no worker ever sees a half-written tarball or a
+  // partially-extracted install dir.
   const url = `https://github.com/theseus-rs/postgresql-binaries/releases/download/${version}/postgresql-${version}-${t}.tar.gz`
-  log?.(`downloading postgres ${version} (${t})…`)
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`failed to download ${url}: HTTP ${res.status}`)
-  mkdirSync(dir, { recursive: true })
-  const tarball = join(root, `pg-${version}.tar.gz`)
-  await writeFile(tarball, Buffer.from(await res.arrayBuffer()))
-  execFileSync('tar', ['xzf', tarball, '-C', dir, '--strip-components=1'])
-  rmSync(tarball, { force: true })
-  log?.(`postgres installed to ${dir}`)
-  return dir
+  mkdirSync(root, { recursive: true })
+  const uniq = `${process.pid}-${randomBytes(6).toString('hex')}`
+  const tarball = join(root, `pg-${version}-${uniq}.tar.gz`)
+  const tmpDir = join(root, `.tmp-${version}-${t}-${uniq}`)
+
+  try {
+    if (isCompleteInstall(dir)) return dir // another worker finished while we started
+    log?.(`downloading postgres ${version} (${t})…`)
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`failed to download ${url}: HTTP ${res.status}`)
+    await writeFile(tarball, Buffer.from(await res.arrayBuffer()))
+    mkdirSync(tmpDir, { recursive: true })
+    execFileSync('tar', ['xzf', tarball, '-C', tmpDir, '--strip-components=1'])
+    if (!isCompleteInstall(tmpDir)) throw new Error('postgres archive extracted incompletely')
+
+    // publish atomically; if another worker already did (or a stale dir exists), reconcile
+    try {
+      renameSync(tmpDir, dir)
+    } catch {
+      if (!isCompleteInstall(dir)) {
+        rmSync(dir, { recursive: true, force: true })
+        renameSync(tmpDir, dir)
+      }
+    }
+    log?.(`postgres installed to ${dir}`)
+    return dir
+  } finally {
+    rmSync(tarball, { force: true })
+    rmSync(tmpDir, { recursive: true, force: true })
+  }
 }
 
 const TUNED_CONF = `
