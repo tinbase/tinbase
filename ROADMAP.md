@@ -43,7 +43,7 @@ Until the harness exists, coverage numbers below are our own honest estimates.
 | Module | Coverage | Biggest gaps |
 | --- | --- | --- |
 | Database (PostgREST) | ~85% | aggregates in select, `.explain()`, `.csv()`, full spread embeds |
-| Auth (GoTrue) | ~65% | **OAuth providers**, MFA, SSO, phone, PKCE, identity linking |
+| Auth (GoTrue) | ~80% | MFA, SSO, phone auth, anonymous→permanent upgrade |
 | Storage | ~80% | image transforms, resumable (TUS) uploads |
 | Realtime | ~70% | **RLS-filtered `postgres_changes`**, private channels |
 | Edge Functions | ~60% | Deno runtime compat, secrets |
@@ -65,10 +65,10 @@ the "runs my real app" bar forward. Check items off as they land.
 - [ ] Wire `--compare` into CI as an informational job (once a CI Docker path is set up)
 
 ### Phase 1 — Auth completeness (the #1 real-app blocker)
-- [ ] OAuth providers (Google, GitHub first) — `signInWithOAuth()` end to end
-- [ ] PKCE flow
+- [x] OAuth providers (Google, GitHub presets + generic) — `signInWithOAuth()` end to end
+- [x] PKCE flow (`exchangeCodeForSession`)
 - [ ] MFA / TOTP enroll + challenge + verify
-- [ ] Identity linking; anonymous → permanent upgrade
+- [x] Identity linking by email (auth.identities); [ ] anonymous → permanent upgrade
 - [ ] Local email inbox UI (like Inbucket/Mailpit) for magic-link/OTP testing
 - Target: Auth ~65% → ~90%
 

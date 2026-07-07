@@ -5,6 +5,7 @@
 import type { Database } from '../db/database.js'
 import { randomToken, signJwt, verifyJwt, type JwtClaims } from '../jwt.js'
 import type { Mailer, RequestContext } from '../types.js'
+import { OAuthService, type OAuthProviderConfig } from './oauth.js'
 import { hashPassword, verifyPassword } from './password.js'
 
 export interface AuthConfig {
@@ -12,6 +13,9 @@ export interface AuthConfig {
   siteUrl: string
   jwtExpiry: number
   mailer: Mailer
+  oauthProviders?: Record<string, OAuthProviderConfig>
+  /** injectable fetch for the OAuth provider calls (tests use a mock provider) */
+  oauthFetch?: typeof fetch
 }
 
 interface UserRow {
@@ -48,10 +52,14 @@ function iso(v: Date | string | null): string | null {
 }
 
 export class AuthHandler {
+  private oauth: OAuthService
+
   constructor(
     private db: Database,
     private config: AuthConfig
-  ) {}
+  ) {
+    this.oauth = new OAuthService(db, config.siteUrl, config.oauthProviders ?? {}, config.oauthFetch ?? fetch)
+  }
 
   async handle(req: Request, ctx: RequestContext, url: URL): Promise<Response> {
     const path = url.pathname.replace(/^\/auth\/v1\/?/, '').replace(/\/+$/, '')
@@ -77,6 +85,10 @@ export class AuthHandler {
       if (['magiclink', 'resend'].includes(path) && method === 'POST') return await this.sendOtp(req)
       if (path === 'verify' && method === 'POST') return await this.verifyToken(req)
       if (path === 'verify' && method === 'GET') return await this.verifyLink(url)
+      if (path === 'authorize' && method === 'GET') return await this.oauth.authorize(url)
+      if (path === 'callback' && (method === 'GET' || method === 'POST')) {
+        return await this.oauth.callback(url, (userId) => this.sessionTokensFor(userId))
+      }
       if (path.startsWith('admin/users')) return await this.admin(req, ctx, path, method)
       return authError(404, 'not_found', `unknown auth endpoint: ${path}`)
     } catch (e) {
@@ -160,6 +172,16 @@ export class AuthHandler {
       await this.db.query(`update auth.refresh_tokens set revoked = true, updated_at = now() where token = $1`, [token])
       const ures = await this.db.query(`select * from auth.users where id = $1`, [row.user_id])
       return json(200, await this.sessionFor(ures.rows[0] as UserRow, token))
+    }
+
+    if (grantType === 'pkce') {
+      const authCode = body.auth_code
+      const verifier = body.code_verifier
+      if (!authCode || !verifier) return authError(400, 'validation_failed', 'auth_code and code_verifier required')
+      const userId = await this.oauth.exchangePkce(authCode, verifier)
+      if (!userId) return authError(403, 'flow_state_not_found', 'invalid or expired auth code')
+      const ures = await this.db.query(`select * from auth.users where id = $1`, [userId])
+      return json(200, await this.sessionFor(ures.rows[0] as UserRow))
     }
 
     return authError(400, 'invalid_grant', `unsupported grant_type: ${grantType}`)
@@ -411,6 +433,17 @@ export class AuthHandler {
       updated_at: iso(u.updated_at),
       is_anonymous: u.is_anonymous ?? false,
     }
+  }
+
+  /** Session tokens for a bare user id (used by the OAuth implicit callback). */
+  private async sessionTokensFor(userId: string): Promise<{ access_token: string; refresh_token: string; expires_in: number }> {
+    const res = await this.db.query(`select * from auth.users where id = $1`, [userId])
+    const session = (await this.sessionFor(res.rows[0] as UserRow)) as {
+      access_token: string
+      refresh_token: string
+      expires_in: number
+    }
+    return { access_token: session.access_token, refresh_token: session.refresh_token, expires_in: session.expires_in }
   }
 
   private async sessionFor(user: UserRow, parentToken?: string): Promise<Record<string, unknown>> {

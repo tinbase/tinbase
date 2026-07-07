@@ -81,6 +81,40 @@ function parseArgs(argv: string[]): CliOptions {
   return opts
 }
 
+/**
+ * Build OAuth providers from env vars, e.g.:
+ *   TINBASE_OAUTH_GOOGLE_CLIENT_ID / TINBASE_OAUTH_GOOGLE_CLIENT_SECRET
+ * google & github have built-in endpoint presets; others also need
+ * TINBASE_OAUTH_<NAME>_AUTHORIZE_URL / _TOKEN_URL / _USERINFO_URL.
+ */
+function loadOAuthProvidersFromEnv(): Record<string, import('./auth/oauth.js').OAuthProviderConfig> {
+  const providers: Record<string, import('./auth/oauth.js').OAuthProviderConfig> = {}
+  const prefix = 'TINBASE_OAUTH_'
+  const seen = new Set<string>()
+  for (const key of Object.keys(process.env)) {
+    if (!key.startsWith(prefix)) continue
+    const rest = key.slice(prefix.length)
+    const m = rest.match(/^([A-Z0-9]+)_CLIENT_ID$/)
+    if (m) seen.add(m[1])
+  }
+  for (const upper of seen) {
+    const g = (suffix: string) => process.env[`${prefix}${upper}_${suffix}`]
+    const name = upper.toLowerCase()
+    const clientId = g('CLIENT_ID')
+    const clientSecret = g('CLIENT_SECRET')
+    if (!clientId || !clientSecret) continue
+    providers[name] = {
+      clientId,
+      clientSecret,
+      authorizeUrl: g('AUTHORIZE_URL'),
+      tokenUrl: g('TOKEN_URL'),
+      userInfoUrl: g('USERINFO_URL'),
+      scopes: g('SCOPES'),
+    }
+  }
+  return providers
+}
+
 function printHelp(): void {
   console.log(`tinbase — Supabase-compatible backend on PGlite (no Docker)
 
@@ -122,6 +156,7 @@ async function main(): Promise<void> {
 
   const project = await loadSupabaseProject(opts.dir)
   const functions = await loadFunctions(opts.dir)
+  const oauthProviders = loadOAuthProvidersFromEnv()
   if (opts.dataDir) await mkdir(opts.dataDir, { recursive: true })
   await mkdir(opts.storageDir, { recursive: true })
 
@@ -141,6 +176,7 @@ async function main(): Promise<void> {
     migrations: project.migrations,
     seedSql: project.seedSql,
     functions,
+    oauthProviders,
     storageDriver: new FsStorageDriver(opts.storageDir),
     log: (msg) => console.log(`  ${msg}`),
   })
@@ -178,6 +214,7 @@ async function main(): Promise<void> {
            Storage: ${opts.storageDir}
         Migrations: ${project.migrations.length} file(s)
          Functions: ${functions.size > 0 ? [...functions.keys()].join(', ') : 'none'}
+    OAuth providers: ${Object.keys(oauthProviders).length ? Object.keys(oauthProviders).join(', ') : 'none'}
 
           anon key: ${backend.anonKey}
   service_role key: ${backend.serviceRoleKey}
