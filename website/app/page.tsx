@@ -24,20 +24,28 @@ const FEATURES = [
     body: 'Reads supabase/migrations/*.sql and seed.sql exactly like the Supabase CLI, tracked in the same table. Outgrow tinbase? Push the same files to hosted Supabase.',
   },
   {
-    title: 'Edge Functions & full auth',
-    body: 'supabase.functions.invoke() runs your handlers in-process. Email/password, anonymous, OTP, magic links, and password recovery — all through supabase-js.',
+    title: 'Auth, including OAuth',
+    body: 'Email/password, anonymous, OTP, magic links, password recovery, and OAuth (Google/GitHub + generic) with PKCE — all through supabase.auth, reading your existing config.toml providers.',
+  },
+  {
+    title: 'Edge Functions',
+    body: 'supabase.functions.invoke() runs your handlers in-process, loaded from supabase/functions/ with the verified auth context and env keys.',
+  },
+  {
+    title: 'Webhooks, cron & queues',
+    body: 'Database webhooks (CDC → HTTP), cron.schedule() jobs, and a pgmq queue subset — the automation layer, natively, with no pg_net/pg_cron/pgmq extension needed.',
+  },
+  {
+    title: 'Typed clients & Studio',
+    body: 'tinbase gen types typescript for a fully typed createClient<Database>, plus a Supabase-Studio-style dashboard at /_/ (tables, SQL, auth, storage, RLS policies).',
+  },
+  {
+    title: 'Realtime with RLS',
+    body: 'postgres_changes, broadcast, and presence — with per-subscriber RLS filtering so users only receive change events for rows they can see.',
   },
   {
     title: 'Runs in the browser',
     body: 'Every service is a pure fetch handler. Hand it to supabase-js as a custom fetch and the entire backend — database included — runs in-process, no server.',
-  },
-  {
-    title: 'Built-in Studio',
-    body: 'A Supabase-Studio-style dashboard at /_/ — full row CRUD, SQL editor, user management, and storage. Ships inside the binary, nothing extra to install.',
-  },
-  {
-    title: 'Zero runtime dependencies',
-    body: 'One npm dependency (@electric-sql/pglite). JWTs via WebCrypto, a hand-rolled WebSocket server, and a pure-Node Postgres wire client.',
   },
 ]
 

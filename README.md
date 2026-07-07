@@ -204,8 +204,11 @@ Rough coverage of the supabase-js SDK surface, measured against what each sub-li
 | Storage (`storage-js`) | ~80% | buckets, upload/download, signed URLs + signed uploads, list/move/copy/remove, size/MIME limits | resumable (TUS) uploads, image transformations |
 | Realtime (`realtime-js`) | ~85% | postgres_changes with filters + **per-subscriber RLS filtering** (INSERT/UPDATE), broadcast (incl. binary), presence, v1+v2 serializers | per-row DELETE RLS, private channel auth, DB-triggered broadcast |
 | Edge Functions (`functions-js`) | ~60% | `invoke()` with JSON/text bodies, auth context, project-dir loading | Deno runtime compat, import maps, `supabase functions deploy` |
+| Type generation | ~85% | `tinbase gen types typescript` → `Database` type (Tables/Views/Functions/Enums/Relationships) | composite-type args, multi-schema output |
 
-**Overall: roughly 80% of the SDK surface - but ~90% of what a typical CRUD + auth + storage + realtime app actually calls.** The biggest real-world gaps are OAuth logins and edge functions.
+**Overall: roughly 80% of the supabase-js SDK surface - and ~90% of what a typical CRUD + auth + storage + realtime app actually calls.**
+
+Beyond the client SDK, the local platform features real projects depend on also work: **type generation**, **RLS** (enforced on REST, Storage, and realtime), **database webhooks**, **cron**, **queues (pgmq)**, the **Studio** dashboard, and Supabase-CLI migration conventions (`db reset` / `db diff`). The remaining gaps are OAuth logins' provider variety, the Deno edge-function runtime, and pgvector (needs an extension binary).
 
 ## Known gaps
 

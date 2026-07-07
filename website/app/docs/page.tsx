@@ -10,6 +10,8 @@ const SECTIONS = [
   { id: 'single-binary', label: 'Single binary' },
   { id: 'studio', label: 'Studio' },
   { id: 'functions', label: 'Edge Functions' },
+  { id: 'automation', label: 'Webhooks, cron & queues' },
+  { id: 'types', label: 'Typed clients' },
   { id: 'rls', label: 'Row Level Security' },
   { id: 'embedding', label: 'Embedding & browser' },
   { id: 'coverage', label: 'API coverage' },
@@ -28,8 +30,8 @@ function Pre({ children, lang = 'bash' }: { children: string; lang?: string }) {
   return <Code code={children} lang={lang} className="rounded-lg p-4" />
 }
 
-function P({ children }: { children: React.ReactNode }) {
-  return <p className="leading-relaxed text-zinc-400">{children}</p>
+function P({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <p className={`leading-relaxed text-zinc-400${className ? ' ' + className : ''}`}>{children}</p>
 }
 
 const IC = 'rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-[0.85em] text-emerald-300'
@@ -200,6 +202,37 @@ export default async function handler(req, ctx) {
   )
 }`}</Pre>
 
+          <H2 id="automation">Webhooks, cron &amp; queues</H2>
+          <P>
+            The automation layer works with no extension on either engine — tinbase implements it
+            natively rather than needing pg_net/pg_cron/pgmq installed.
+          </P>
+          <P>
+            <b className="text-zinc-200">Database webhooks</b> fire an HTTP request when rows change,
+            with Supabase&apos;s exact payload (<code className={IC}>type/table/schema/record/old_record</code>).
+            Configure via <code className={IC}>createBackend(&#123; webhooks &#125;)</code>,{' '}
+            <code className={IC}>backend.webhooks.register()</code>, or <code className={IC}>supabase/webhooks.json</code>.
+          </P>
+          <P>
+            <b className="text-zinc-200">Cron</b> — <code className={IC}>select cron.schedule(&apos;nightly&apos;, &apos;0 0 * * *&apos;, &apos;delete from logs&apos;)</code>{' '}
+            (also the <code className={IC}>&apos;N seconds&apos;</code> form); an in-process scheduler runs due jobs and
+            logs them to <code className={IC}>cron.job_run_details</code>.
+          </P>
+          <P>
+            <b className="text-zinc-200">Queues</b> — a pgmq subset: call from SQL or the client.
+          </P>
+          <Pre lang="ts">{`await supabase.schema('pgmq').rpc('send', { queue_name: 'jobs', msg: { task: 'email' } })
+const { data } = await supabase.schema('pgmq').rpc('read', { queue_name: 'jobs', vt: 30, qty: 5 })`}</Pre>
+
+          <H2 id="types">Typed clients</H2>
+          <P>
+            Generate a Supabase-shaped <code className={IC}>Database</code> type from the live schema,
+            the same as <code className={IC}>supabase gen types typescript</code>:
+          </P>
+          <Pre lang="bash">{`tinbase gen types typescript > database.types.ts`}</Pre>
+          <Pre lang="ts">{`import type { Database } from './database.types'
+const supabase = createClient<Database>(url, anonKey)  // fully typed queries`}</Pre>
+
           <H2 id="rls">Row Level Security</H2>
           <P>
             Every REST and Storage request runs inside a transaction with{' '}
@@ -258,8 +291,16 @@ const supabase = createClient('http://localhost', backend.anonKey, {
             </table>
           </div>
           <P>
-            Roughly 80% of the SDK surface overall — but ~90% of what a typical CRUD + auth + storage
-            + realtime app actually calls.
+            Roughly 80% of the supabase-js SDK surface overall — and ~90% of what a typical CRUD +
+            auth + storage + realtime app actually calls.
+          </P>
+          <P className="mt-3">
+            Beyond the client SDK, the local platform features real projects rely on also work:{' '}
+            <b className="text-zinc-200">type generation</b>, <b className="text-zinc-200">RLS</b>{' '}
+            (enforced on REST, Storage, and realtime), <b className="text-zinc-200">database webhooks</b>,{' '}
+            <b className="text-zinc-200">cron</b>, <b className="text-zinc-200">queues (pgmq)</b>,{' '}
+            the <b className="text-zinc-200">Studio</b> dashboard, and Supabase-CLI migration
+            conventions with <code className={IC}>db reset</code> / <code className={IC}>db diff</code>.
           </P>
 
           <H2 id="benchmarks">Benchmarks</H2>
