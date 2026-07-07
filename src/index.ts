@@ -10,6 +10,7 @@
 import { AdminApi } from './admin/api.js'
 import { ADMIN_HTML } from './admin/ui.js'
 import { AuthHandler } from './auth/handler.js'
+import { InboxMailer } from './auth/inbox.js'
 import { FunctionsHandler, type EdgeFunction } from './functions/handler.js'
 import { installDenoShim, setDenoEnv } from './functions/deno-shim.js'
 import { Database } from './db/database.js'
@@ -20,13 +21,14 @@ import { MemoryStorageDriver } from './storage/driver.js'
 import { StorageHandler } from './storage/handler.js'
 import { WebhooksService, type WebhookDelivery } from './webhooks/service.js'
 import { CronService } from './cron/service.js'
-import { DEFAULT_JWT_SECRET, type BackendConfig, type MigrationFile, type RequestContext } from './types.js'
+import { DEFAULT_JWT_SECRET, type BackendConfig, type Mailer, type MigrationFile, type RequestContext } from './types.js'
 
 export * from './types.js'
 export { Database } from './db/database.js'
 export { createPgmemEngine } from './db/pgmem-engine.js'
 export { createPgliteEngine } from './db/pglite-engine.js'
 export { MemoryStorageDriver } from './storage/driver.js'
+export { InboxMailer, type InboxEntry } from './auth/inbox.js'
 export { RealtimeEngine, type RealtimeSocketLike } from './realtime/engine.js'
 export { signJwt, verifyJwt, decodeJwt } from './jwt.js'
 export { FunctionsHandler, type EdgeFunction, type FunctionContext } from './functions/handler.js'
@@ -49,6 +51,8 @@ export interface TinbaseBackend {
   /** JWT for the service_role — bypasses RLS. */
   serviceRoleKey: string
   jwtSecret: string
+  /** Captured dev email inbox (mounted at /inbox), or null if a custom mailer was provided. */
+  inbox: InboxMailer | null
   /** Apply additional migrations at runtime. */
   migrate: (migrations: MigrationFile[], seedSql?: string) => Promise<string[]>
   close: () => Promise<void>
@@ -83,12 +87,13 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
   )
 
   const rest = new RestHandler(db)
-  const mailer = config.mailer ?? {
-    async send(msg: { to: string; subject: string; text: string }) {
-      const log = config.log ?? console.log
-      log(`[mail] to=${msg.to} subject="${msg.subject}"\n${msg.text}`)
-    },
-  }
+  // With no custom mailer, capture auth emails in an in-memory inbox (viewable
+  // at /inbox) and still log them. A provided mailer takes over and no inbox is
+  // mounted.
+  const inbox = config.mailer
+    ? null
+    : new InboxMailer((msg) => (config.log ?? console.log)(`[mail] to=${msg.to} subject="${msg.subject}"\n${msg.text}`))
+  const mailer: Mailer = config.mailer ?? inbox!
   const auth = new AuthHandler(db, {
     jwtSecret,
     siteUrl,
@@ -177,6 +182,11 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
       return new Response(ADMIN_HTML, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } })
     }
 
+    // local email inbox (dev-only; mounted only when using the default mailer)
+    if (inbox && (path === '/inbox' || path.startsWith('/inbox/'))) {
+      return withCors(inbox.serve(req, url))
+    }
+
     // public endpoints that skip apikey checks
     if (path.startsWith('/storage/v1/object/public/') || path.startsWith('/storage/v1/object/sign/')) {
       if (req.method === 'GET' || req.method === 'HEAD') {
@@ -239,6 +249,7 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
     anonKey,
     serviceRoleKey,
     jwtSecret,
+    inbox,
     migrate: (migrations, seedSql) => db.runMigrations(migrations, seedSql),
     close: async () => {
       cron.stop()
