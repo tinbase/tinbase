@@ -212,8 +212,17 @@ export class AuthHandler {
     }
     const sets: string[] = []
     const params: unknown[] = []
+    // Upgrading an anonymous user to a permanent one: adding an email (and
+    // usually a password) keeps the same id + data, flips is_anonymous off, and
+    // records an email identity — matching supabase.auth.updateUser({ email }).
+    const upgradingAnon = (user.is_anonymous ?? false) && !!body.email
     if (body.email) {
-      params.push(body.email.toLowerCase().trim())
+      const email = body.email.toLowerCase().trim()
+      const clash = await this.db.query(`select id from auth.users where email = $1 and id <> $2`, [email, user.id])
+      if (clash.rows.length > 0) {
+        return authError(422, 'email_exists', 'A user with this email address has already been registered')
+      }
+      params.push(email)
       sets.push(`email = $${params.length}, email_confirmed_at = now()`)
     }
     if (body.password) {
@@ -227,13 +236,27 @@ export class AuthHandler {
       params.push(JSON.stringify(body.data))
       sets.push(`raw_user_meta_data = coalesce(raw_user_meta_data, '{}'::jsonb) || $${params.length}::jsonb`)
     }
+    if (upgradingAnon) {
+      sets.push(`is_anonymous = false`)
+      sets.push(`raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{"provider":"email","providers":["email"]}'::jsonb`)
+    }
     if (sets.length === 0) return json(200, this.userJson(user))
     params.push(user.id)
     const res = await this.db.query(
       `update auth.users set ${sets.join(', ')}, updated_at = now() where id = $${params.length} returning *`,
       params
     )
-    return json(200, this.userJson(res.rows[0] as UserRow))
+    const updated = res.rows[0] as UserRow
+    if (upgradingAnon) {
+      // record the email identity, unless one somehow already exists
+      await this.db.query(
+        `insert into auth.identities (user_id, provider, provider_id, identity_data)
+         values ($1, 'email', $2, $3)
+         on conflict (provider, provider_id) do nothing`,
+        [updated.id, updated.id, JSON.stringify({ sub: updated.id, email: updated.email })]
+      )
+    }
+    return json(200, this.userJson(updated))
   }
 
   private async logout(req: Request): Promise<Response> {

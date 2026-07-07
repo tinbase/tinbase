@@ -9,3 +9,6 @@ bench/pb_migrations/
 dist-bin/
 admin-ui/node_modules/
 admin-ui/dist/
+
+# Claude Code session artifacts
+.claude/
