@@ -110,7 +110,7 @@ export default function Home() {
             APIs from a single file at a fraction of the memory.
           </p>
           <Card className="mt-10 p-8">
-            <WeightChart collapsible />
+            <WeightChart />
           </Card>
           <div className="mt-6 grid gap-4 sm:grid-cols-3">
             <Card>
