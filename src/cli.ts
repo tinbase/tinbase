@@ -7,9 +7,10 @@
  *   tinbase status    show applied migrations
  *   tinbase keys      print anon/service_role keys for the JWT secret
  */
-import { mkdir, rm } from 'node:fs/promises'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { createBackend, generateTypes } from './index.js'
+import { computeDbDiff, shadowNativeDataDir } from './node/db-diff.js'
 import { createNativeEngine } from './node/native/engine.js'
 import { FsStorageDriver } from './node/fs-driver.js'
 import { loadFunctions } from './node/load-functions.js'
@@ -36,6 +37,7 @@ interface CliOptions {
   jwtSecret: string
   memory: boolean
   engine: 'wasm' | 'native'
+  diffFile?: string
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -64,6 +66,7 @@ function parseArgs(argv: string[]): CliOptions {
     else if (a === '--storage-dir') opts.storageDir = resolve(next())
     else if (a === '--jwt-secret') opts.jwtSecret = next()
     else if (a === '--memory') opts.memory = true
+    else if (a === '-f' || a === '--file') opts.diffFile = next()
     else if (a === '--engine') {
       const v = next()
       if (v !== 'wasm' && v !== 'native') {
@@ -99,6 +102,7 @@ Commands:
   keys       print anon and service_role keys
   gen types  print a TypeScript Database type for the current schema
   db reset   wipe the database + storage and re-run migrations and seed
+  db diff    print DDL for schema changes not yet in migrations (-f <name> to write a migration)
 
 Options:
   -p, --port <n>        port to listen on (default 54321; also TINBASE_PORT/PORT env)
@@ -116,10 +120,41 @@ Options:
 async function main(): Promise<void> {
   const opts = parseArgs(process.argv.slice(2))
 
+  if (opts.command === 'db' && opts.positionals[0] === 'diff') {
+    // `tinbase db diff [-f name]` — DDL for schema changes not yet in migrations
+    const project = await loadSupabaseProject(opts.dir)
+    const nativeLive =
+      opts.engine === 'native'
+        ? await createNativeEngine({ dataDir: join(opts.dir, '.tinbase', 'pgdata') })
+        : undefined
+    const ddl = await computeDbDiff({
+      liveEngine: nativeLive,
+      liveDataDir: opts.engine === 'native' ? undefined : join(opts.dir, '.tinbase', 'db'),
+      migrations: project.migrations,
+      makeShadowEngine:
+        opts.engine === 'native' ? () => createNativeEngine({ dataDir: shadowNativeDataDir() }) : undefined,
+    })
+    if (ddl.length === 0) {
+      console.error('No schema changes found.')
+      return
+    }
+    const body = ddl.join('\n\n') + '\n'
+    if (opts.diffFile) {
+      const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)
+      const path = join(opts.dir, 'supabase', 'migrations', `${stamp}_${opts.diffFile}.sql`)
+      await mkdir(join(opts.dir, 'supabase', 'migrations'), { recursive: true })
+      await writeFile(path, body)
+      console.error(`Wrote ${path}`)
+    } else {
+      process.stdout.write(body)
+    }
+    return
+  }
+
   if (opts.command === 'db') {
     const sub = opts.positionals[0]
     if (sub !== 'reset') {
-      console.error(`unknown db subcommand: ${sub ?? '(none)'} (supported: reset)`)
+      console.error(`unknown db subcommand: ${sub ?? '(none)'} (supported: reset, diff)`)
       process.exit(1)
     }
     // `tinbase db reset` — wipe data + storage and re-run migrations + seed fresh

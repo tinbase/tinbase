@@ -80,7 +80,7 @@ the "runs my real app" bar forward. Check items off as they land.
 
 ### Phase 3 — Developer experience
 - [x] `tinbase gen types typescript` from the live schema
-- [x] `db reset` (wipe + re-run migrations/seed); [ ] `db diff`, `db pull`, inspect
+- [x] `db reset` (wipe + re-run migrations/seed); [x] `db diff` (schema differ); [ ] `db pull`, inspect
 - [ ] Studio: RLS policy editor, functions/triggers browser, logs pane
 - Target: match the daily-driver DX of the Supabase CLI + Studio
 

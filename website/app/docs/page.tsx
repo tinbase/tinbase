@@ -114,6 +114,7 @@ tinbase status     # list applied migrations
 tinbase keys       # print anon / service_role keys
 tinbase gen types  # emit a TypeScript Database type
 tinbase db reset   # wipe + re-run migrations and seed
+tinbase db diff    # DDL for out-of-migration schema changes
 
   -p, --port <n>        port (default 54321; or TINBASE_PORT / PORT env)
       --dir <path>      project dir containing supabase/ (default cwd)
