@@ -1,6 +1,7 @@
 import { SiteNav } from '@/components/site-nav'
 import { Code } from '@/components/code'
 import { FootprintChart } from '@/components/footprint-chart'
+import { InstallChart } from '@/components/install-chart'
 
 const SECTIONS = [
   { id: 'why', label: 'Why tinbase' },
@@ -142,10 +143,15 @@ tinbase db diff    # DDL for out-of-migration schema changes
             <strong className="text-zinc-200">pgmem</strong> is an ultralight, pure-JS, in-memory
             subset via <a className="underline decoration-zinc-700 underline-offset-2 hover:text-zinc-300" href="https://github.com/oguimbal/pg-mem">pg-mem</a> —
             a <strong className="text-zinc-200">~3.6 MB install with no WASM</strong>, the lightest
-            option for the browser (RapidNative local-dev and previews). It runs the REST CRUD surface
-            plus email/password auth; RLS, realtime, functions, pgmq, and cron are{' '}
-            <em>not</em> available (RLS DDL in migrations is skipped, not fatal). Local-dev / preview
-            only — never production.
+            option for the browser (RapidNative local-dev and previews). It runs the REST CRUD surface,
+            email/password auth, <strong className="text-zinc-200">edge functions, realtime
+            (broadcast/presence + <code className={IC}>postgres_changes</code>), and database webhooks</strong>.
+            pg-mem has no triggers or LISTEN/NOTIFY, so realtime and webhook change events are
+            synthesized in JS by the REST layer (every write passes through it in-process). What&apos;s{' '}
+            <em>not</em> here: <strong className="text-zinc-200">RLS</strong> (so realtime/webhook events
+            are delivered unfiltered, not per-subscriber), <strong className="text-zinc-200">cron</strong>,
+            and <strong className="text-zinc-200">pgmq</strong> — RLS DDL in migrations is skipped, not
+            fatal. Local-dev / preview only — never production.
           </P>
           <P>
             The wasm and native engines run identical bootstrap, migrations, RLS, and realtime CDC.
@@ -325,6 +331,14 @@ const supabase = createClient('http://localhost', backend.anonKey, {
           <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-6">
             <FootprintChart />
           </div>
+          <P>
+            Runtime memory is only one axis. The other is what it costs to <em>ship</em> an engine —
+            and there the ranking flips: pg-mem is a 3.6 MB pure-JS install with no WASM and no native
+            binary, the lightest thing to embed even though it uses more RAM under load.
+          </P>
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-6">
+            <InstallChart />
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm">
               <thead>
@@ -362,8 +376,8 @@ const supabase = createClient('http://localhost', backend.anonKey, {
           <P className="text-xs text-zinc-500">
             The wasm figure is essentially PGlite&apos;s WASM heap, which measures anywhere in
             ~575–650 MB depending on GC timing — treat it as a band, not a point. pg-mem is a pure-JS
-            in-memory subset (no RLS, realtime, functions, pgmq, or cron) but a 3.6 MB install with no
-            WASM, the lightest option for the browser.
+            in-memory subset (no RLS, cron, or pgmq; realtime/webhooks work but deliver unfiltered) but
+            a 3.6 MB install with no WASM, the lightest option for the browser.
           </P>
           <P>
             Methodology, raw numbers, and a reproducible script live in the repo:{' '}

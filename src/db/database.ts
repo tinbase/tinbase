@@ -368,6 +368,43 @@ export class Database {
     return () => this.cdcListeners.delete(cb)
   }
 
+  /**
+   * True when the engine can't run the trigger + `pg_notify` CDC pipeline
+   * (pg-mem has no triggers/LISTEN/NOTIFY). For those engines the REST layer
+   * synthesizes change events in JS via {@link emitCdc}, since every write goes
+   * through it in-process.
+   */
+  get jsCdc(): boolean {
+    return !!this.engine.minimalBootstrap
+  }
+
+  /**
+   * Feed synthetic CDC events into the same listener set the trigger path uses,
+   * so realtime `postgres_changes` and database webhooks fire on engines without
+   * triggers/NOTIFY (pg-mem). Called by the REST handler after a committed
+   * mutation, one event per affected row.
+   *
+   * NOTE: these engines have no RLS, so events are delivered unfiltered — the
+   * per-subscriber row check in the realtime layer is a no-op here.
+   */
+  emitCdc(
+    meta: { schema: string; table: string; type: CdcEvent['type'] },
+    rows: Record<string, unknown>[]
+  ): void {
+    if (this.cdcListeners.size === 0 || rows.length === 0) return
+    const commit_timestamp = new Date().toISOString()
+    for (const row of rows) {
+      const record = meta.type === 'DELETE' ? null : row
+      const old_record = meta.type === 'DELETE' ? row : null
+      let event: CdcEvent = { ...meta, commit_timestamp, record, old_record }
+      // mirror the trigger's ~8kB pg_notify payload cap
+      if (JSON.stringify(record ?? old_record ?? {}).length > 7500) {
+        event = { ...event, record: null, old_record: null, errors: ['Payload too large'] }
+      }
+      for (const listener of this.cdcListeners) listener(event)
+    }
+  }
+
   async close(): Promise<void> {
     await this.engine.close()
   }
