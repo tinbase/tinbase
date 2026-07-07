@@ -187,20 +187,22 @@ tinbase db diff    # DDL for out-of-migration schema changes
           <H2 id="functions">Edge Functions</H2>
           <P>
             <code className={IC}>supabase.functions.invoke()</code> runs your handlers in-process.
-            A function is any fetch handler; the CLI loads them from{' '}
-            <code className={IC}>supabase/functions/&lt;name&gt;/index.&#123;ts,js,mjs&#125;</code>{' '}
-            (default export), or you pass them to{' '}
-            <code className={IC}>createBackend(&#123; functions &#125;)</code>. Each call receives the
-            verified auth context and the project&apos;s env keys.
+            Supabase-style <code className={IC}>Deno.serve(handler)</code> functions (with{' '}
+            <code className={IC}>Deno.env</code>) run unchanged, as do <code className={IC}>export default</code>{' '}
+            handlers. The CLI loads them from{' '}
+            <code className={IC}>supabase/functions/&lt;name&gt;/index.&#123;ts,js,mjs&#125;</code>, or
+            pass them to <code className={IC}>createBackend(&#123; functions &#125;)</code>. Functions
+            using only Web APIs work as-is; <code className={IC}>npm:</code>/<code className={IC}>jsr:</code>/URL
+            imports still need a bundling step.
           </P>
           <Pre lang="ts">{`// supabase/functions/hello/index.mjs
-export default async function handler(req, ctx) {
+Deno.serve(async (req) => {
   const { name = 'world' } = await req.json().catch(() => ({}))
   return new Response(
-    JSON.stringify({ message: \`Hello \${name}!\`, role: ctx.auth.role }),
+    JSON.stringify({ message: \`Hello \${name}!\` }),
     { headers: { 'content-type': 'application/json' } }
   )
-}`}</Pre>
+})`}</Pre>
 
           <H2 id="automation">Webhooks, cron &amp; queues</H2>
           <P>
@@ -278,7 +280,7 @@ const supabase = createClient('http://localhost', backend.anonKey, {
                   ['Auth (auth-js)', '~80%', 'MFA, SSO/SAML, phone auth'],
                   ['Storage (storage-js)', '~80%', 'resumable uploads, image transforms'],
                   ['Realtime (realtime-js)', '~85%', 'per-row DELETE RLS, private channels'],
-                  ['Edge Functions', '~60%', 'Deno runtime compat, import maps'],
+                  ['Edge Functions', '~70%', 'npm:/jsr: import resolution, secrets'],
                   ['Type generation', '~85%', 'composite-type args, multi-schema'],
                 ].map(([m, c, g]) => (
                   <tr key={m} className="border-b border-zinc-800/60">

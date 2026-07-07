@@ -11,6 +11,7 @@ import { AdminApi } from './admin/api.js'
 import { ADMIN_HTML } from './admin/ui.js'
 import { AuthHandler } from './auth/handler.js'
 import { FunctionsHandler, type EdgeFunction } from './functions/handler.js'
+import { installDenoShim, setDenoEnv } from './functions/deno-shim.js'
 import { Database } from './db/database.js'
 import { signJwt, verifyJwt } from './jwt.js'
 import { RealtimeEngine } from './realtime/engine.js'
@@ -28,6 +29,7 @@ export { RealtimeEngine, type RealtimeSocketLike } from './realtime/engine.js'
 export { signJwt, verifyJwt, decodeJwt } from './jwt.js'
 export { FunctionsHandler, type EdgeFunction, type FunctionContext } from './functions/handler.js'
 export { generateTypes } from './gen-types.js'
+export { installDenoShim, setDenoEnv } from './functions/deno-shim.js'
 export { WebhooksService, type WebhookConfig, type WebhookDelivery } from './webhooks/service.js'
 export { CronService, cronMatches } from './cron/service.js'
 export { snapshotSchema, diffSchemas, type SchemaSnapshot } from './db/schema-diff.js'
@@ -110,11 +112,15 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
     config.functions instanceof Map
       ? config.functions
       : new Map(Object.entries(config.functions ?? {}))
-  const functions = new FunctionsHandler(fnMap as Map<string, EdgeFunction>, {
+  const fnEnv = {
     SUPABASE_URL: siteUrl,
     SUPABASE_ANON_KEY: anonKey,
     SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey,
-  })
+  }
+  // make these visible to Deno.serve-style functions via the shim's Deno.env
+  installDenoShim()
+  setDenoEnv(fnEnv)
+  const functions = new FunctionsHandler(fnMap as Map<string, EdgeFunction>, fnEnv)
 
   async function resolveContext(req: Request, url: URL): Promise<RequestContext | Response> {
     const authz = req.headers.get('authorization')

@@ -3,6 +3,7 @@ import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { EdgeFunction } from '../functions/handler.js'
+import { installDenoShim, resetCapturedHandler, takeCapturedHandler } from '../functions/deno-shim.js'
 
 export async function loadFunctions(projectDir: string): Promise<Map<string, EdgeFunction>> {
   const functions = new Map<string, EdgeFunction>()
@@ -14,6 +15,9 @@ export async function loadFunctions(projectDir: string): Promise<Map<string, Edg
   } catch {
     return functions
   }
+
+  // so Supabase-style `Deno.serve(handler)` functions run unchanged
+  installDenoShim()
 
   for (const name of entries) {
     if (name.startsWith('_') || name.startsWith('.')) continue
@@ -27,11 +31,16 @@ export async function loadFunctions(projectDir: string): Promise<Map<string, Edg
         continue
       }
       try {
+        resetCapturedHandler()
         const mod = (await import(pathToFileURL(path).href)) as { default?: EdgeFunction }
-        if (typeof mod.default === 'function') {
-          functions.set(name, mod.default)
+        // prefer an explicit default export; otherwise use the handler a
+        // Deno.serve() call captured during import
+        const denoHandler = takeCapturedHandler()
+        const handler = typeof mod.default === 'function' ? mod.default : denoHandler ? (req: Request) => denoHandler(req) : undefined
+        if (handler) {
+          functions.set(name, handler as EdgeFunction)
         } else {
-          console.warn(`  warning: function "${name}" has no default export, skipped`)
+          console.warn(`  warning: function "${name}" has no default export or Deno.serve() handler, skipped`)
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)

@@ -46,7 +46,7 @@ Until the harness exists, coverage numbers below are our own honest estimates.
 | Auth (GoTrue) | ~80% | MFA, SSO, phone auth, anonymous→permanent upgrade |
 | Storage | ~80% | image transforms, resumable (TUS) uploads |
 | Realtime | ~85% | per-row DELETE RLS (WALRUS), private channels, broadcast-from-db |
-| Edge Functions | ~60% | Deno runtime compat, secrets |
+| Edge Functions | ~70% | npm:/jsr: import resolution, secrets |
 | Studio | ~70% | logs pane, table/column designer UI |
 | Type generation | ~85% | composite-type args, multi-schema output |
 | Extensions (pgvector, pg_cron, pg_net, pgmq) | partial/0% | vector search, cron, webhooks, queues |
@@ -96,7 +96,9 @@ in the theseus native Postgres binaries or this PGlite build. Two tracks:
 - Target: AI + automation apps run unchanged
 
 ### Phase 5 — Edge Functions runtime fidelity
-- [ ] Deno-compatible execution (or a documented, tested shim path)
+- [x] Deno-compatible execution via a Deno.serve/Deno.env shim (functions using
+      Web APIs run unchanged; npm:/jsr:/URL imports still need bundling)
+- [ ] Resolve npm:/jsr:/URL import specifiers (bundling step)
 - [ ] Function secrets; local invoke parity with `supabase functions serve`
 - Target: real Supabase functions run with no edits
 
