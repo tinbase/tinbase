@@ -1,17 +1,22 @@
 /**
  * pg-mem engine — an ultralight, pure-JS, in-memory Postgres *subset* for
  * local dev / previews (RapidNative) where footprint matters more than full
- * fidelity. Single-digit MB instead of PGlite's ~400 MB, but explicitly NOT a
- * faithful Postgres:
+ * fidelity. A ~3.6 MB install with no WASM, vs PGlite's ~600 MB heap.
  *
- *   - NO row-level security (policies are skipped; RLS is not enforced)
- *   - NO realtime / webhooks (no LISTEN/NOTIFY, no triggers)
+ * What works: the REST CRUD surface (select/insert/update/delete, filters,
+ * embeds, count), email/password auth, edge functions, realtime
+ * (broadcast/presence + postgres_changes), and database webhooks. Because
+ * pg-mem has no triggers/LISTEN/NOTIFY, change events for realtime and webhooks
+ * are synthesized in JS by the REST layer (see Database.emitCdc) — every write
+ * goes through it in-process.
+ *
+ * What's explicitly NOT here (it is a subset, not a faithful Postgres):
+ *   - NO row-level security (policies are skipped; RLS is not enforced) — so
+ *     realtime/webhook events are delivered UNFILTERED, not per-subscriber
  *   - NO PL/pgSQL functions, pgmq, or cron
- *   - reduced introspection
+ *   - reduced introspection; UPDATE change events carry no old_record
  *
- * It runs the REST CRUD surface (select/insert/update/delete, filters, embeds,
- * count) and email/password auth. Use it for throwaway local data, not for
- * anything that relies on Postgres semantics.
+ * Use it for throwaway local data and previews, never production.
  */
 import type { DbEngine, EngineResults, EngineTx } from './engine.js'
 import { Mutex } from './engine.js'

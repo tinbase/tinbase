@@ -1,6 +1,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
-import { FootprintChart } from '@/components/footprint-chart'
+import { WeightChart } from '@/components/weight-chart'
+import { FeatureIcon } from '@/components/feature-icon'
 import { SiteNav } from '@/components/site-nav'
 import { Badge, Card, LinkButton } from '@/components/ui'
 import { Code } from '@/components/code'
@@ -9,42 +10,52 @@ import { GitHubIcon } from '@/components/github-icon'
 const FEATURES = [
   {
     title: 'supabase-js works unchanged',
+    icon: 'link',
     body: 'REST, Auth, Storage, and Realtime speak the same wire protocols as hosted Supabase. Point the official SDK at tinbase and your app just runs.',
   },
   {
     title: 'Real Postgres, really small',
+    icon: 'database',
     body: 'RLS policies, auth.uid(), jsonb, triggers, foreign keys. Choose embedded native Postgres 17 (59 MB RAM) or PGlite WASM for zero-setup portability.',
   },
   {
     title: 'One file to deploy',
+    icon: 'box',
     body: 'A single 57 MB executable with no Node, npm, or Docker on the target machine. Postgres binaries (12 MB) auto-download on first run.',
   },
   {
     title: 'Your migrations stay portable',
+    icon: 'transfer',
     body: 'Reads supabase/migrations/*.sql and seed.sql exactly like the Supabase CLI, tracked in the same table. Outgrow tinbase? Push the same files to hosted Supabase.',
   },
   {
     title: 'Auth, including OAuth',
+    icon: 'lock',
     body: 'Email/password, anonymous, OTP, magic links, password recovery, and OAuth (Google/GitHub + generic) with PKCE — all through supabase.auth, reading your existing config.toml providers.',
   },
   {
     title: 'Edge Functions',
+    icon: 'bolt',
     body: 'supabase.functions.invoke() runs your handlers in-process, loaded from supabase/functions/ with the verified auth context and env keys.',
   },
   {
     title: 'Webhooks, cron & queues',
+    icon: 'clock',
     body: 'Database webhooks (CDC → HTTP), cron.schedule() jobs, and a pgmq queue subset — the automation layer, natively, with no pg_net/pg_cron/pgmq extension needed.',
   },
   {
     title: 'Typed clients & Studio',
+    icon: 'code',
     body: 'tinbase gen types typescript for a fully typed createClient<Database>, plus a Supabase-Studio-style dashboard at /_/ (tables, SQL, auth, storage, RLS policies).',
   },
   {
     title: 'Realtime with RLS',
+    icon: 'broadcast',
     body: 'postgres_changes, broadcast, and presence — with per-subscriber RLS filtering so users only receive change events for rows they can see.',
   },
   {
     title: 'Runs in the browser',
+    icon: 'browser',
     body: 'Every service is a pure fetch handler. Hand it to supabase-js as a custom fetch and the entire backend — database included — runs in-process, no server.',
   },
 ]
@@ -75,9 +86,9 @@ export default function Home() {
         {/* hero */}
         <section className="flex flex-col items-center py-24 text-center">
           <Image src="/logo.svg" alt="tinbase logo" width={88} height={88} priority />
-          <Badge className="mt-8">The Supabase backend, without Docker · Open source (MIT)</Badge>
+          <Badge className="mt-8">Supabase-compatible backend, without Docker · Open source (MIT)</Badge>
           <h1 className="mt-6 max-w-3xl text-balance text-5xl font-bold tracking-tight sm:text-6xl">
-            The Supabase backend that fits in a <span className="text-emerald-400">tin</span>
+            The Supabase-compatible backend that fits in a <span className="text-emerald-400">tin</span>
           </h1>
           <p className="mt-6 max-w-2xl text-pretty text-lg text-zinc-400">
             A Supabase-compatible backend in a single 57 MB binary — real Postgres with Row Level
@@ -101,13 +112,16 @@ export default function Home() {
 
         {/* benchmark */}
         <section id="benchmarks" className="scroll-mt-20 border-t border-zinc-800/80 py-20">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-emerald-400">
+            Benchmark
+          </p>
           <h2 className="text-3xl font-bold tracking-tight">A weight class you can deploy anywhere</h2>
           <p className="mt-3 max-w-2xl text-zinc-400">
             The Supabase local stack is a 12-container, 2.3 GB Docker install. tinbase serves the same
             APIs from a single file at a fraction of the memory.
           </p>
           <Card className="mt-10 p-8">
-            <FootprintChart />
+            <WeightChart />
           </Card>
           <div className="mt-6 grid gap-4 sm:grid-cols-3">
             <Card>
@@ -180,11 +194,17 @@ export default function Home() {
 
         {/* features */}
         <section className="border-t border-zinc-800/80 py-20">
-          <h2 className="text-3xl font-bold tracking-tight">Why tinbase</h2>
+          <div className="flex items-center gap-3">
+            <Image src="/logo.svg" alt="" width={32} height={32} aria-hidden="true" />
+            <h2 className="text-3xl font-bold tracking-tight">Why tinbase</h2>
+          </div>
           <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {FEATURES.map((f) => (
               <Card key={f.title}>
-                <h3 className="font-semibold text-emerald-400">{f.title}</h3>
+                <span className="flex size-9 items-center justify-center rounded-lg border border-emerald-500/20 bg-emerald-500/10 text-emerald-400">
+                  <FeatureIcon name={f.icon} className="size-5" />
+                </span>
+                <h3 className="mt-4 font-semibold text-emerald-400">{f.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-zinc-400">{f.body}</p>
               </Card>
             ))}
