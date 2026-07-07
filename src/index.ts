@@ -18,6 +18,7 @@ import { RestHandler } from './rest/handler.js'
 import { MemoryStorageDriver } from './storage/driver.js'
 import { StorageHandler } from './storage/handler.js'
 import { WebhooksService, type WebhookDelivery } from './webhooks/service.js'
+import { CronService } from './cron/service.js'
 import { DEFAULT_JWT_SECRET, type BackendConfig, type MigrationFile, type RequestContext } from './types.js'
 
 export * from './types.js'
@@ -28,6 +29,7 @@ export { signJwt, verifyJwt, decodeJwt } from './jwt.js'
 export { FunctionsHandler, type EdgeFunction, type FunctionContext } from './functions/handler.js'
 export { generateTypes } from './gen-types.js'
 export { WebhooksService, type WebhookConfig, type WebhookDelivery } from './webhooks/service.js'
+export { CronService, cronMatches } from './cron/service.js'
 export { snapshotSchema, diffSchemas, type SchemaSnapshot } from './db/schema-diff.js'
 
 export interface TinbaseBackend {
@@ -37,6 +39,7 @@ export interface TinbaseBackend {
   realtime: RealtimeEngine
   functions: FunctionsHandler
   webhooks: WebhooksService
+  cron: CronService
   /** JWT for the anon role — use as supabase-js's supabaseKey. */
   anonKey: string
   /** JWT for the service_role — bypasses RLS. */
@@ -98,6 +101,9 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
     config.log?.(`[webhook] ${d.event.type} ${d.event.schema}.${d.event.table} -> ${d.webhook.url} ${d.ok ? d.status : 'FAILED ' + (d.error ?? '')}`)
   )
   if (config.webhooks?.length) await webhooks.start(config.webhooks)
+
+  const cron = new CronService(db)
+  cron.start()
   const admin = new AdminApi(db)
 
   const fnMap =
@@ -221,11 +227,13 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
     realtime,
     functions,
     webhooks,
+    cron,
     anonKey,
     serviceRoleKey,
     jwtSecret,
     migrate: (migrations, seedSql) => db.runMigrations(migrations, seedSql),
     close: async () => {
+      cron.stop()
       webhooks.stopService()
       realtime.stop()
       await db.close()

@@ -1,4 +1,5 @@
 import { BOOTSTRAP_SQL } from './bootstrap.js'
+import { PGMQ_SQL, CRON_SQL } from './emulated.js'
 import { createPgliteEngine } from './pglite-engine.js'
 import type { DbEngine, EngineResults, EngineTx } from './engine.js'
 import type { MigrationFile, RequestContext } from '../types.js'
@@ -75,6 +76,10 @@ export class Database {
         ? dataDirOrEngine
         : await createPgliteEngine(dataDirOrEngine)
     await engine.exec(BOOTSTRAP_SQL)
+    // emulated extensions (pgmq queues, cron) — pure SQL, so pgmq.*/cron.* work
+    // with no C extension on either engine
+    await engine.exec(PGMQ_SQL)
+    await engine.exec(CRON_SQL)
     return new Database(engine)
   }
 
