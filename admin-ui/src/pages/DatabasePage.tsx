@@ -5,13 +5,17 @@ import { Empty, Spinner } from '../components/ui'
 export function DatabasePage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [migrations, setMigrations] = useState<{ version: string; name: string | null; applied_at: string }[]>([])
+  const [functions, setFunctions] = useState<any[]>([])
+  const [triggers, setTriggers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([api.stats(), api.migrations()])
-      .then(([s, m]) => {
+    Promise.all([api.stats(), api.migrations(), api.functions(), api.triggers()])
+      .then(([s, m, f, t]) => {
         setStats(s)
         setMigrations(m)
+        setFunctions(f)
+        setTriggers(t)
       })
       .finally(() => setLoading(false))
   }, [])
@@ -56,6 +60,58 @@ export function DatabasePage() {
           </tbody>
         </table>
         {migrations.length === 0 && <Empty>No migrations applied.</Empty>}
+      </div>
+
+      <h2 className="mb-2 mt-8 text-xs font-semibold uppercase tracking-wide text-neutral-500">Functions</h2>
+      <div className="overflow-hidden rounded-md border border-neutral-800">
+        <table className="w-full border-collapse text-[13px]">
+          <thead className="bg-[#191919]">
+            <tr className="border-b border-neutral-800 text-left text-neutral-400">
+              <th className="px-4 py-2 font-medium">Name</th>
+              <th className="px-4 py-2 font-medium">Arguments</th>
+              <th className="px-4 py-2 font-medium">Returns</th>
+              <th className="px-4 py-2 font-medium">Language</th>
+            </tr>
+          </thead>
+          <tbody>
+            {functions.map((f) => (
+              <tr key={f.name} className="border-b border-neutral-800/60">
+                <td className="px-4 py-1.5 font-mono text-neutral-200">{f.name}</td>
+                <td className="max-w-[280px] truncate px-4 py-1.5 font-mono text-[11px] text-neutral-500">{f.args || '—'}</td>
+                <td className="px-4 py-1.5 font-mono text-neutral-400">{f.returns}</td>
+                <td className="px-4 py-1.5 text-neutral-400">{f.language}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {functions.length === 0 && <Empty>No user functions.</Empty>}
+      </div>
+
+      <h2 className="mb-2 mt-8 text-xs font-semibold uppercase tracking-wide text-neutral-500">Triggers</h2>
+      <div className="overflow-hidden rounded-md border border-neutral-800">
+        <table className="w-full border-collapse text-[13px]">
+          <thead className="bg-[#191919]">
+            <tr className="border-b border-neutral-800 text-left text-neutral-400">
+              <th className="px-4 py-2 font-medium">Name</th>
+              <th className="px-4 py-2 font-medium">Table</th>
+              <th className="px-4 py-2 font-medium">Timing</th>
+              <th className="px-4 py-2 font-medium">Events</th>
+              <th className="px-4 py-2 font-medium">Function</th>
+            </tr>
+          </thead>
+          <tbody>
+            {triggers.map((t) => (
+              <tr key={t.table + t.name} className="border-b border-neutral-800/60">
+                <td className="px-4 py-1.5 font-mono text-neutral-200">{t.name}</td>
+                <td className="px-4 py-1.5 font-mono text-neutral-400">{t.table}</td>
+                <td className="px-4 py-1.5 text-neutral-400">{t.timing}</td>
+                <td className="px-4 py-1.5 text-neutral-400">{(t.events || []).join(', ')}</td>
+                <td className="px-4 py-1.5 font-mono text-[11px] text-neutral-500">{t.function}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {triggers.length === 0 && <Empty>No triggers.</Empty>}
       </div>
     </div>
   )

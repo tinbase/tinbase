@@ -138,7 +138,8 @@ tinbase ships with a built-in dashboard at [`/_/`](http://127.0.0.1:54321/_/) - 
 - **SQL Editor** - run arbitrary SQL with result grids and Postgres error details
 - **Authentication** - list, create, delete users and reset passwords
 - **Storage** - create/delete buckets, upload/delete objects, toggle public access
-- **Database** - stats overview and applied migrations
+- **RLS Policies** - list, create, and drop policies per table
+- **Database** - stats, migrations, functions, and triggers
 
 It is a React app compiled to a single self-contained HTML file, so it also works inside the single binary. Sign in with the `service_role` key printed at startup.
 

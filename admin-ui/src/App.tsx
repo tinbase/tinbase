@@ -1,4 +1,4 @@
-import { Database, KeyRound, HardDrive, Table2, Terminal, GitBranch } from 'lucide-react'
+import { Database, KeyRound, HardDrive, Table2, Terminal, GitBranch, ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { api, clearKey, getKey, setKey } from './api'
 import { Button, Input } from './components/ui'
@@ -7,13 +7,15 @@ import { SqlEditor } from './pages/SqlEditor'
 import { AuthUsers } from './pages/AuthUsers'
 import { Storage } from './pages/Storage'
 import { DatabasePage } from './pages/DatabasePage'
+import { Policies } from './pages/Policies'
 
-type Tab = 'table' | 'sql' | 'auth' | 'storage' | 'database'
+type Tab = 'table' | 'sql' | 'auth' | 'policies' | 'storage' | 'database'
 
 const NAV: { id: Tab; label: string; icon: typeof Table2 }[] = [
   { id: 'table', label: 'Table Editor', icon: Table2 },
   { id: 'sql', label: 'SQL Editor', icon: Terminal },
   { id: 'auth', label: 'Authentication', icon: KeyRound },
+  { id: 'policies', label: 'RLS Policies', icon: ShieldCheck },
   { id: 'storage', label: 'Storage', icon: HardDrive },
   { id: 'database', label: 'Database', icon: GitBranch },
 ]
@@ -84,6 +86,7 @@ export function App() {
         {tab === 'table' && <TableEditor />}
         {tab === 'sql' && <SqlEditor />}
         {tab === 'auth' && <AuthUsers />}
+        {tab === 'policies' && <Policies />}
         {tab === 'storage' && <Storage />}
         {tab === 'database' && <DatabasePage />}
       </main>

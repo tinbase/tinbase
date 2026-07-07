@@ -70,6 +70,15 @@ export const api = {
     req('/admin/v1/migrations')
       .then(jsonOrThrow)
       .then((r) => r.migrations as { version: string; name: string | null; applied_at: string }[]),
+  policies: () => req('/admin/v1/policies').then(jsonOrThrow).then((r) => r.policies as any[]),
+  createPolicy: (body: Record<string, unknown>) =>
+    req('/admin/v1/policies', { method: 'POST', body: JSON.stringify(body) }).then(jsonOrThrow),
+  dropPolicy: (table: string, name: string) => {
+    const p = new URLSearchParams({ table, name })
+    return req(`/admin/v1/policies?${p}`, { method: 'DELETE' }).then(jsonOrThrow)
+  },
+  functions: () => req('/admin/v1/functions').then(jsonOrThrow).then((r) => r.functions as any[]),
+  triggers: () => req('/admin/v1/triggers').then(jsonOrThrow).then((r) => r.triggers as any[]),
   sql: (query: string) =>
     req('/admin/v1/sql', { method: 'POST', body: JSON.stringify({ query }) }).then(async (res) => {
       const body = await res.json()

@@ -47,7 +47,7 @@ Until the harness exists, coverage numbers below are our own honest estimates.
 | Storage | ~80% | image transforms, resumable (TUS) uploads |
 | Realtime | ~85% | per-row DELETE RLS (WALRUS), private channels, broadcast-from-db |
 | Edge Functions | ~60% | Deno runtime compat, secrets |
-| Studio | basic | RLS policy editor, functions/triggers UI, logs |
+| Studio | ~70% | logs pane, table/column designer UI |
 | Type generation | ~85% | composite-type args, multi-schema output |
 | Extensions (pgvector, pg_cron, pg_net, pgmq) | partial/0% | vector search, cron, webhooks, queues |
 
@@ -81,14 +81,18 @@ the "runs my real app" bar forward. Check items off as they land.
 ### Phase 3 — Developer experience
 - [x] `tinbase gen types typescript` from the live schema
 - [x] `db reset` (wipe + re-run migrations/seed); [x] `db diff` (schema differ); [ ] `db pull`, inspect
-- [ ] Studio: RLS policy editor, functions/triggers browser, logs pane
+- [x] Studio: RLS policy editor, functions/triggers browser; [ ] logs pane
 - Target: match the daily-driver DX of the Supabase CLI + Studio
 
 ### Phase 4 — Extensions & automation
-- [ ] pgvector (embeddings / similarity search)
-- [ ] pg_net (database webhooks)
-- [ ] pg_cron (scheduled jobs)
-- [ ] pgmq (queues)
+Finding: pgvector/pg_net/pg_cron/pgmq are third-party C extensions NOT present
+in the theseus native Postgres binaries or this PGlite build. Two tracks:
+- [ ] Bundle extension binaries (pgvector first) for native across platforms +
+      a PGlite build that includes them — infra project, needed for true pgvector
+- [ ] tinbase-native automation that needs no C extension, works on both engines:
+      - [ ] database webhooks (CDC → HTTP) — replaces pg_net's http_post pattern
+      - [ ] scheduled jobs (in-process cron running SQL) — replaces pg_cron
+      - [ ] table-backed queue helpers — replaces pgmq
 - Target: AI + automation apps run unchanged
 
 ### Phase 5 — Edge Functions runtime fidelity

@@ -61,6 +61,30 @@ describe('admin', () => {
     expect(((await bad.json()) as { code: string }).code).toBe('42P01')
   })
 
+  it('lists, creates, and drops RLS policies', async () => {
+    // secrets table has RLS enabled with a policy in the test schema
+    const list = await req('/admin/v1/policies', backend.serviceRoleKey)
+    const body = (await list.json()) as { policies: { table: string; name: string }[] }
+    expect(body.policies.some((p) => p.table === 'secrets')).toBe(true)
+
+    const created = await req('/admin/v1/policies', backend.serviceRoleKey, {
+      method: 'POST',
+      body: JSON.stringify({ table: 'secrets', name: 'admin_temp', command: 'SELECT', roles: 'authenticated', using: 'true' }),
+    })
+    expect(created.status).toBe(200)
+
+    const drop = await req('/admin/v1/policies?table=secrets&name=admin_temp', backend.serviceRoleKey, { method: 'DELETE' })
+    expect(drop.status).toBe(200)
+  })
+
+  it('lists functions and triggers', async () => {
+    const fns = (await (await req('/admin/v1/functions', backend.serviceRoleKey)).json()) as { functions: any[] }
+    expect(fns.functions.some((f) => f.name === 'add_numbers')).toBe(true)
+
+    const trg = (await (await req('/admin/v1/triggers', backend.serviceRoleKey)).json()) as { triggers: any[] }
+    expect(Array.isArray(trg.triggers)).toBe(true)
+  })
+
   it('returns stats', async () => {
     const res = await req('/admin/v1/stats', backend.serviceRoleKey)
     const body = (await res.json()) as { migrations: number; dbSize: string }

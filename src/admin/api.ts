@@ -31,6 +31,11 @@ export class AdminApi {
       if (path === 'stats' && method === 'GET') return await this.stats()
       if (path === 'schemas' && method === 'GET') return await this.schemas()
       if (path === 'migrations' && method === 'GET') return await this.migrations()
+      if (path === 'policies' && method === 'GET') return await this.listPolicies(url)
+      if (path === 'policies' && method === 'POST') return await this.createPolicy(req)
+      if (path === 'policies' && method === 'DELETE') return await this.dropPolicy(url)
+      if (path === 'functions' && method === 'GET') return await this.listFunctions(url)
+      if (path === 'triggers' && method === 'GET') return await this.listTriggers(url)
       return json(404, { error: `unknown admin endpoint: ${path}` })
     } catch (e) {
       return json(500, { error: e instanceof Error ? e.message : String(e) })
@@ -100,6 +105,97 @@ export class AdminApi {
       `select version, name, applied_at from supabase_migrations.schema_migrations order by version`
     )
     return json(200, { migrations: res.rows })
+  }
+
+  private async listPolicies(url: URL): Promise<Response> {
+    const schema = url.searchParams.get('schema') ?? 'public'
+    const res = await this.db.query(
+      `select schemaname as schema, tablename as table, policyname as name,
+              cmd, permissive, roles, qual as using_expr, with_check
+       from pg_policies where schemaname = $1
+       order by tablename, policyname`,
+      [schema]
+    )
+    return json(200, { policies: res.rows })
+  }
+
+  private async createPolicy(req: Request): Promise<Response> {
+    const b = (await req.json().catch(() => ({}))) as {
+      schema?: string
+      table?: string
+      name?: string
+      command?: string // ALL | SELECT | INSERT | UPDATE | DELETE
+      roles?: string
+      using?: string
+      check?: string
+    }
+    if (!b.table || !b.name) return json(400, { error: 'table and name are required' })
+    const schema = b.schema ?? 'public'
+    const cmd = (b.command ?? 'ALL').toUpperCase()
+    const roles = b.roles?.trim() || 'public'
+    let sql = `create policy ${quoteIdent(b.name)} on ${quoteIdent(schema)}.${quoteIdent(b.table)} for ${cmd} to ${roles}`
+    if (b.using?.trim()) sql += ` using (${b.using})`
+    if (b.check?.trim()) sql += ` with check (${b.check})`
+    try {
+      await this.db.query(sql)
+      this.db.invalidateSchemaCache()
+      return json(200, { ok: true })
+    } catch (e) {
+      const pg = e as { message?: string; code?: string; hint?: string }
+      return json(400, { error: pg.message, code: pg.code, hint: pg.hint })
+    }
+  }
+
+  private async dropPolicy(url: URL): Promise<Response> {
+    const schema = url.searchParams.get('schema') ?? 'public'
+    const table = url.searchParams.get('table')
+    const name = url.searchParams.get('name')
+    if (!table || !name) return json(400, { error: 'table and name are required' })
+    try {
+      await this.db.query(`drop policy ${quoteIdent(name)} on ${quoteIdent(schema)}.${quoteIdent(table)}`)
+      return json(200, { ok: true })
+    } catch (e) {
+      return json(400, { error: (e as { message?: string }).message })
+    }
+  }
+
+  private async listFunctions(url: URL): Promise<Response> {
+    const schema = url.searchParams.get('schema') ?? 'public'
+    const res = await this.db.query(
+      `select p.proname as name,
+              pg_get_function_identity_arguments(p.oid) as args,
+              t.typname as returns, l.lanname as language,
+              p.prosrc as body
+       from pg_proc p
+       join pg_namespace n on n.oid = p.pronamespace
+       join pg_type t on t.oid = p.prorettype
+       join pg_language l on l.oid = p.prolang
+       where n.nspname = $1 and p.prokind = 'f'
+       order by p.proname`,
+      [schema]
+    )
+    return json(200, { functions: res.rows })
+  }
+
+  private async listTriggers(url: URL): Promise<Response> {
+    const schema = url.searchParams.get('schema') ?? 'public'
+    const res = await this.db.query(
+      `select tg.tgname as name, c.relname as table,
+              case when (tg.tgtype & 2) <> 0 then 'BEFORE' else 'AFTER' end as timing,
+              array_remove(array[
+                case when (tg.tgtype & 4) <> 0 then 'INSERT' end,
+                case when (tg.tgtype & 8) <> 0 then 'DELETE' end,
+                case when (tg.tgtype & 16) <> 0 then 'UPDATE' end], null) as events,
+              p.proname as function
+       from pg_trigger tg
+       join pg_class c on c.oid = tg.tgrelid
+       join pg_namespace n on n.oid = c.relnamespace
+       join pg_proc p on p.oid = tg.tgfoid
+       where n.nspname = $1 and not tg.tgisinternal
+       order by c.relname, tg.tgname`,
+      [schema]
+    )
+    return json(200, { triggers: res.rows })
   }
 
   private async stats(): Promise<Response> {
