@@ -159,6 +159,24 @@ export class Database {
   invalidateSchemaCache(): void {
     this.schemaCache.clear()
     this.fnCache.clear()
+    this.rlsCache.clear()
+  }
+
+  private rlsCache = new Map<string, Set<string>>()
+
+  /** Names of tables in `schema` that have row-level security enabled. */
+  async getRlsTables(schema: string): Promise<Set<string>> {
+    const cached = this.rlsCache.get(schema)
+    if (cached) return cached
+    const res = await this.engine.query<{ relname: string }>(
+      `select c.relname from pg_class c
+       join pg_namespace n on n.oid = c.relnamespace
+       where n.nspname = $1 and c.relrowsecurity = true`,
+      [schema]
+    )
+    const set = new Set(res.rows.map((r) => r.relname))
+    this.rlsCache.set(schema, set)
+    return set
   }
 
   async getSchemaInfo(schema: string): Promise<SchemaInfo> {

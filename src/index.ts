@@ -86,7 +86,7 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
     oauthFetch: config.oauthFetch,
   })
   const storage = new StorageHandler(db, config.storageDriver ?? new MemoryStorageDriver(), { jwtSecret })
-  const realtime = new RealtimeEngine(db)
+  const realtime = new RealtimeEngine(db, jwtSecret)
   await realtime.start()
   const admin = new AdminApi(db)
 

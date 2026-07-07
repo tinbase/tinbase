@@ -1,6 +1,6 @@
 {
   "name": "tinbase",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A pure-JS, Docker-free Supabase backend replacement built on PGlite. Wire-compatible with supabase-js.",
   "type": "module",
   "author": "Sanket Sahu",

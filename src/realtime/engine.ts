@@ -9,6 +9,9 @@
  * browser.
  */
 import type { CdcEvent, Database } from '../db/database.js'
+import { quoteIdent } from '../db/database.js'
+import { verifyJwt } from '../jwt.js'
+import type { RequestContext } from '../types.js'
 
 export interface RealtimeSocketLike {
   send(data: string | Uint8Array): void
@@ -39,6 +42,8 @@ interface Channel {
   broadcastAck: boolean
   presenceKey: string
   presenceEnabled: boolean
+  /** subscriber auth (from the join's access_token), used to filter by RLS */
+  ctx: RequestContext
 }
 
 interface Connection {
@@ -58,7 +63,19 @@ export class RealtimeEngine {
   private presence = new Map<string, Map<string, PresenceMetas>>()
   private stopCdc: (() => void) | null = null
 
-  constructor(private db: Database) {}
+  constructor(
+    private db: Database,
+    private jwtSecret?: string
+  ) {}
+
+  /** Resolve a subscriber's access token to a role/claims context. */
+  private async contextFromToken(token: string | undefined): Promise<RequestContext> {
+    if (!token || !this.jwtSecret) return { role: 'anon', claims: null }
+    const claims = await verifyJwt(token, this.jwtSecret)
+    if (!claims) return { role: 'anon', claims: null }
+    const role = typeof claims.role === 'string' ? claims.role : 'authenticated'
+    return { role, claims }
+  }
 
   async start(): Promise<void> {
     if (this.stopCdc) return
@@ -156,7 +173,13 @@ export class RealtimeEngine {
         this.handlePresence(conn, msg)
         break
       case 'access_token':
-        // token refresh — nothing to re-validate in this single-tenant setup
+        {
+          // supabase-js setAuth() refreshes the subscriber's token; re-derive ctx
+          const ctx = await this.contextFromToken(msg.payload?.access_token as string | undefined)
+          const channel = conn.channels.get(msg.topic)
+          if (channel) channel.ctx = ctx
+          else for (const c of conn.channels.values()) c.ctx = ctx
+        }
         break
       default:
         break
@@ -206,6 +229,7 @@ export class RealtimeEngine {
       broadcastAck: config.broadcast?.ack ?? false,
       presenceKey: config.presence?.key || crypto.randomUUID(),
       presenceEnabled: config.presence?.enabled ?? true,
+      ctx: await this.contextFromToken(msg.payload?.access_token as string | undefined),
     }
     conn.channels.set(msg.topic, channel)
 
@@ -393,12 +417,22 @@ export class RealtimeEngine {
       // schema went away — still deliver the event without columns
     }
 
+    // RLS: only deliver a change to a subscriber if their role/claims would let
+    // them see the row. INSERT/UPDATE are re-checked by primary key as that
+    // subscriber; DELETE cannot be re-queried (the row is gone) — see note below.
+    const rlsTables = await this.db.getRlsTables(event.schema).catch(() => new Set<string>())
+    const rlsEnabled = rlsTables.has(event.table)
+    const pk = rlsEnabled ? (await this.db.getSchemaInfo(event.schema)).tables.get(event.table)?.primaryKey ?? [] : []
+
     for (const conn of this.connections) {
       for (const channel of conn.channels.values()) {
         const ids = channel.bindings
           .filter((b) => this.bindingMatches(b, event))
           .map((b) => b.id)
         if (ids.length === 0) continue
+
+        if (!(await this.canSee(channel.ctx, event, rlsEnabled, pk))) continue
+
         this.send(conn, {
           topic: channel.topic,
           event: 'postgres_changes',
@@ -419,6 +453,40 @@ export class RealtimeEngine {
           ref: null,
         })
       }
+    }
+  }
+
+  /**
+   * Whether a subscriber may receive a given change event under RLS.
+   * - service_role (bypassrls) and non-RLS tables: always.
+   * - INSERT/UPDATE on an RLS table: re-query the row by PK as the subscriber;
+   *   deliver only if it is visible to them.
+   * - DELETE on an RLS table: the row no longer exists to re-query, so per-row
+   *   filtering isn't possible without WAL-level policy evaluation (WALRUS).
+   *   We deliver DELETEs to authenticated/service subscribers only, never anon.
+   */
+  private async canSee(ctx: RequestContext, event: CdcEvent, rlsEnabled: boolean, pk: string[]): Promise<boolean> {
+    if (!rlsEnabled) return true
+    if (ctx.role === 'service_role') return true
+
+    if (event.type === 'DELETE') return ctx.role !== 'anon'
+    if (pk.length === 0) return ctx.role !== 'anon' // can't PK-filter; conservative
+
+    const record = event.record ?? {}
+    const conds = pk.map((c, i) => `${quoteIdent(c)} = $${i + 1}`)
+    const params = pk.map((c) => record[c])
+    if (params.some((v) => v === undefined)) return ctx.role !== 'anon'
+
+    try {
+      const res = await this.db.withContext(ctx, (q) =>
+        q(
+          `select 1 from ${quoteIdent(event.schema)}.${quoteIdent(event.table)} where ${conds.join(' and ')} limit 1`,
+          params
+        )
+      )
+      return res.rows.length > 0
+    } catch {
+      return false
     }
   }
 

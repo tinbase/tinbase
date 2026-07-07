@@ -45,7 +45,7 @@ Until the harness exists, coverage numbers below are our own honest estimates.
 | Database (PostgREST) | ~85% | aggregates in select, `.explain()`, `.csv()`, full spread embeds |
 | Auth (GoTrue) | ~80% | MFA, SSO, phone auth, anonymous→permanent upgrade |
 | Storage | ~80% | image transforms, resumable (TUS) uploads |
-| Realtime | ~70% | **RLS-filtered `postgres_changes`**, private channels |
+| Realtime | ~85% | per-row DELETE RLS (WALRUS), private channels, broadcast-from-db |
 | Edge Functions | ~60% | Deno runtime compat, secrets |
 | Studio | basic | RLS policy editor, functions/triggers UI, logs |
 | Type generation | 0% | `gen types typescript` |
@@ -73,7 +73,7 @@ the "runs my real app" bar forward. Check items off as they land.
 - Target: Auth ~65% → ~90%
 
 ### Phase 2 — Realtime correctness
-- [ ] RLS-filtered `postgres_changes` fan-out (subscribers only see permitted rows)
+- [x] RLS-filtered `postgres_changes` (INSERT/UPDATE by PK re-query; DELETE limited — see note)
 - [ ] Private channels with authorization
 - [ ] Broadcast-from-database
 - Target: Realtime ~70% → ~90%; closes a real security gap

@@ -241,7 +241,7 @@ const supabase = createClient('http://localhost', backend.anonKey, {
                   ['Database (postgrest-js)', '~85%', 'aggregates in select, .explain(), .csv()'],
                   ['Auth (auth-js)', '~80%', 'MFA, SSO/SAML, phone auth'],
                   ['Storage (storage-js)', '~80%', 'resumable uploads, image transforms'],
-                  ['Realtime (realtime-js)', '~70%', 'RLS-filtered fan-out, private channels'],
+                  ['Realtime (realtime-js)', '~85%', 'per-row DELETE RLS, private channels'],
                   ['Edge Functions', '~60%', 'Deno runtime compat, import maps'],
                 ].map(([m, c, g]) => (
                   <tr key={m} className="border-b border-zinc-800/60">
