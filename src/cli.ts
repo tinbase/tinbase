@@ -286,7 +286,7 @@ async function main(): Promise<void> {
   tinbase running
 
            API URL: ${server.url}
-          Admin UI: ${server.url}/_/
+          Admin UI: ${server.url}/_/${backend.inbox ? `\n       Email inbox: ${server.url}/inbox` : ''}
             Engine: ${opts.engine === 'native' ? 'native postgres' : opts.engine === 'pgmem' ? 'pg-mem (in-memory, lite)' : `PGlite (${opts.memory ? 'in-memory' : opts.dataDir})`}
            Storage: ${opts.storageDir}
         Migrations: ${project.migrations.length} file(s)
