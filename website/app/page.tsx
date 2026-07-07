@@ -101,6 +101,9 @@ export default function Home() {
 
         {/* benchmark */}
         <section id="benchmarks" className="scroll-mt-20 border-t border-zinc-800/80 py-20">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-emerald-400">
+            Benchmark
+          </p>
           <h2 className="text-3xl font-bold tracking-tight">A weight class you can deploy anywhere</h2>
           <p className="mt-3 max-w-2xl text-zinc-400">
             The Supabase local stack is a 12-container, 2.3 GB Docker install. tinbase serves the same
