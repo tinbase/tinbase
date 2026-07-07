@@ -15,7 +15,7 @@ npx tinbase start
 
 - **No Docker, no external services.** One runtime dependency: `@electric-sql/pglite`.
 - **Real Postgres semantics.** RLS policies, `auth.uid()`, triggers, FKs - it is Postgres.
-- **Two engines, one API.** Default is PGlite (WASM Postgres - portable, browser-ready). `--engine native` runs an embedded native Postgres instead: ~53 MB of RAM at boot, PocketBase-class footprint, zero semantic differences.
+- **Two engines, one API.** Default is PGlite (WASM Postgres - portable, browser-ready). `--engine native` runs an embedded native Postgres instead: ~59 MB of RAM at boot, PocketBase-class footprint, zero semantic differences.
 - **Supabase CLI migration conventions.** Reads `supabase/migrations/*.sql` and `supabase/seed.sql`; tracks them in `supabase_migrations.schema_migrations`. Your migration files stay portable to hosted Supabase.
 - **Browser-ready core.** Every service is a pure `(Request) => Response` fetch handler. In Node it's served over HTTP; in the browser you can hand it to supabase-js as a custom `fetch` and run the whole backend in-process (PGlite already runs in the browser via IndexedDB/OPFS).
 
@@ -68,8 +68,8 @@ tinbase db diff    # DDL for schema changes not yet in migrations (-f <name> to 
 
 ### Engines
 
-- **wasm** (default): PGlite. Zero setup, runs anywhere Node runs - and in the browser. Costs ~350 MB RAM.
-- **native**: embedded native Postgres 17. First run downloads platform binaries (~12 MB, from [theseus-rs/postgresql-binaries](https://github.com/theseus-rs/postgresql-binaries), cached in `~/.cache/tinbase`), then `initdb` with memory-lean settings. ~53 MB RAM at boot. Listens only on a private unix socket (0700 dir, trust auth) - never TCP. macOS/Linux on x64/arm64; on Windows use wasm.
+- **wasm** (default): PGlite. Zero setup, runs anywhere Node runs - and in the browser. Its WASM heap uses ~575-650 MB RAM.
+- **native**: embedded native Postgres 17. First run downloads platform binaries (~12 MB, from [theseus-rs/postgresql-binaries](https://github.com/theseus-rs/postgresql-binaries), cached in `~/.cache/tinbase`), then `initdb` with memory-lean settings. ~59 MB RAM at boot. Listens only on a private unix socket (0700 dir, trust auth) - never TCP. macOS/Linux on x64/arm64; on Windows use wasm.
 
 Both engines run the identical bootstrap, migrations, RLS, and realtime CDC - the test suite passes on both (`TINBASE_TEST_ENGINE=native npm test`).
 
@@ -81,7 +81,7 @@ npm run build:binary   # requires bun; emits dist-bin/tinbase (~57 MB)
 ./tinbase start        # that's the whole deployment
 ```
 
-One compiled executable, no Node or npm on the target machine. It defaults to the native engine (Postgres binaries auto-download on first run, 12 MB) and serves everything - REST, Auth, Storage, Realtime WebSockets - at 44 MB of RAM at boot. Runs under Bun's runtime via a Bun-native server (`Bun.serve` + built-in WebSockets); the same CLI on Node uses the node:http server.
+One compiled executable, no Node or npm on the target machine. It defaults to the native engine (Postgres binaries auto-download on first run, 12 MB) and serves everything - REST, Auth, Storage, Realtime WebSockets - at ~49 MB of RAM at boot (~66 MB under load). Runs under Bun's runtime via a Bun-native server (`Bun.serve` + built-in WebSockets); the same CLI on Node uses the node:http server.
 
 ## Embedding (Node or browser)
 
@@ -175,23 +175,23 @@ Measured on an Apple Silicon Mac (48 GB), macOS 15. Same workload for all three:
 | | tinbase (single binary) | tinbase (native, Node) | tinbase (wasm) | PocketBase v0.39.5 | Supabase local (CLI 2.40) |
 | --- | --- | --- | --- | --- | --- |
 | Database | real Postgres 17 + RLS | real Postgres 17 + RLS | real Postgres (PGlite) + RLS | SQLite | Postgres 17 |
-| Runtime memory at boot | 44 MB | 53 MB | 573 MB | 16 MB | 1,441 MB |
-| Runtime memory after workload | 64 MB | 96 MB | 347 MB¹ | 25 MB | 1,626 MB |
-| Data on disk (1k rows) | 38 MB | 38 MB | 39 MB | 7 MB | 70 MB |
-| Install size | 92 MB (no runtime needed) | 35 MB² | 26 MB² | 30 MB | 2,291 MB³ |
+| Runtime memory at boot | 49 MB | 59 MB | ~610 MB¹ | 15 MB | 1,441 MB |
+| Runtime memory after workload | 66 MB | 100 MB | ~640 MB¹ | 24 MB | 1,626 MB |
+| Data on disk (1k rows) | 39 MB | 39 MB | 40 MB | 7 MB | 70 MB |
+| Install size | 92 MB (no runtime needed) | 36 MB² | 27 MB² | 30 MB | 2,291 MB³ |
 | Processes | 2 (tinbase + postgres) | 2 (node + postgres) | 1 | 1 | 12 containers + Docker |
 | 1,000 inserts | 0.4 s | 0.5 s | 0.8 s | 0.3 s | 1.1 s |
-| 1,000 filtered reads | 0.4 s | 0.4 s | 0.8 s | 0.3 s | 1.0 s |
+| 1,000 filtered reads | 0.3 s | 0.4 s | 0.9 s | 0.3 s | 1.0 s |
 
-¹ PGlite's WASM instantiation peaks at boot, then the OS reclaims pages; steady state under load is ~350 MB.
+¹ The wasm figure is essentially PGlite's WASM heap, which measures anywhere in ~575–650 MB depending on GC timing at the sample — treat it as a band, not a point. It does not shrink under load. The API layers add only single-digit MB. Use wasm where portability matters (browser, one-dependency install); deploy the native engine or single binary on servers.
 ² Native: unpacked Postgres 17 binaries + `dist`. Wasm: `dist` + `@electric-sql/pglite`. Both exclude the Node runtime you already have.
 ³ Sum of the Docker image sizes the default local stack runs, excluding Docker Desktop itself.
 
 **How to read this honestly:**
 
-- **vs Supabase local**: same SDK, same APIs, ~15-27x less memory (native engine), ~65x smaller install, 2 processes instead of a 12-container stack, and boots in ~2 s instead of a minute. That's the entire point of the project.
-- **vs PocketBase**: the single binary lands in PocketBase's weight class - ~2.5x the RAM, one downloadable file, no runtime prerequisite - while running *real Postgres* (RLS, jsonb, FKs, triggers) behind Supabase's exact wire APIs, so your code and migration files move to hosted Supabase unchanged. PocketBase is still the lightest option if you don't need any of that.
-- The wasm engine's memory is almost entirely the PGlite WASM heap; the API layers add single-digit MB. Use it where portability matters (browser, one-dependency installs); use `--engine native` on servers.
+- **vs Supabase local**: same SDK, same APIs, ~16-24x less memory (native engine / single binary), ~25-65x smaller install, 2 processes instead of a 12-container stack, and boots in ~2 s instead of a minute. That's the entire point of the project.
+- **vs PocketBase**: the single binary lands in PocketBase's weight class - ~2.7x the RAM (66 vs 24 MB under load), one downloadable file, no runtime prerequisite - while running *real Postgres* (RLS, jsonb, FKs, triggers) behind Supabase's exact wire APIs, so your code and migration files move to hosted Supabase unchanged. PocketBase is still the lightest option if you don't need any of that.
+- The wasm engine trades memory for portability: its ~575-650 MB is PGlite's WASM heap (the API layers add single-digit MB), and it's the only engine that runs in a browser. On servers, use the native engine or single binary.
 
 ## How complete is it?
 

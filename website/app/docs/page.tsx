@@ -128,14 +128,14 @@ tinbase db diff    # DDL for out-of-migration schema changes
           <H2 id="engines">Engines</H2>
           <P>
             <strong className="text-zinc-200">wasm</strong> (default) runs PGlite — Postgres compiled
-            to WebAssembly. Zero setup, runs anywhere Node runs including the browser; costs ~350 MB
-            of RAM.
+            to WebAssembly. Zero setup, runs anywhere Node runs including the browser; its WASM heap
+            sits around ~575–650 MB of RAM.
           </P>
           <P>
             <strong className="text-zinc-200">native</strong> runs embedded native Postgres 17. The
             first run downloads platform binaries (~12 MB, cached in{' '}
             <code className={IC}>~/.cache/tinbase</code>), then <code className={IC}>initdb</code>{' '}
-            with memory-lean settings. ~53 MB of RAM at boot. It listens only on a private unix
+            with memory-lean settings. ~59 MB of RAM at boot. It listens only on a private unix
             socket (0700 directory, trust auth) — never TCP. macOS and Linux on x64/arm64.
           </P>
           <P>
@@ -148,8 +148,8 @@ tinbase db diff    # DDL for out-of-migration schema changes
 ./tinbase start        # that's the whole deployment`}</Pre>
           <P>
             One compiled executable — no Node, npm, or Docker on the target machine. It defaults to
-            the native engine and serves REST, Auth, Storage, and Realtime WebSockets at 44 MB of RAM
-            at boot, 64 MB under load.
+            the native engine and serves REST, Auth, Storage, and Realtime WebSockets at ~49 MB of RAM
+            at boot, ~66 MB under load.
           </P>
 
           <H2 id="studio">Studio</H2>
@@ -321,6 +321,7 @@ const supabase = createClient('http://localhost', backend.anonKey, {
                 <tr className="border-b border-zinc-800 text-left text-zinc-300">
                   <th className="py-2 pr-4 font-semibold"></th>
                   <th className="py-2 pr-4 font-semibold text-emerald-400">tinbase (binary)</th>
+                  <th className="py-2 pr-4 font-semibold text-emerald-400">tinbase (native)</th>
                   <th className="py-2 pr-4 font-semibold text-emerald-400">tinbase (wasm)</th>
                   <th className="py-2 pr-4 font-semibold">PocketBase</th>
                   <th className="py-2 font-semibold">Supabase local</th>
@@ -328,19 +329,19 @@ const supabase = createClient('http://localhost', backend.anonKey, {
               </thead>
               <tbody className="text-zinc-400">
                 {[
-                  ['Database', 'real Postgres 17 + RLS', 'real Postgres (PGlite) + RLS', 'SQLite', 'Postgres 17'],
-                  ['Memory at boot', '44 MB', '573 MB', '16 MB', '1,441 MB'],
-                  ['Memory under load', '64 MB', '347 MB', '25 MB', '1,626 MB'],
-                  ['Data on disk (1k rows)', '38 MB', '39 MB', '7 MB', '70 MB'],
-                  ['Install size', '92 MB, no runtime', '26 MB + Node', '30 MB', '2,291 MB + Docker'],
-                  ['Processes', '2', '1', '1', '12 containers'],
-                  ['1,000 inserts', '0.4 s', '0.8 s', '0.3 s', '1.1 s'],
-                  ['1,000 filtered reads', '0.4 s', '0.8 s', '0.3 s', '1.0 s'],
+                  ['Database', 'real Postgres 17 + RLS', 'real Postgres 17 + RLS', 'real Postgres (PGlite) + RLS', 'SQLite', 'Postgres 17'],
+                  ['Memory at boot', '49 MB', '59 MB', '~610 MB', '15 MB', '1,441 MB'],
+                  ['Memory under load', '66 MB', '100 MB', '~640 MB', '24 MB', '1,626 MB'],
+                  ['Data on disk (1k rows)', '39 MB', '39 MB', '40 MB', '7 MB', '70 MB'],
+                  ['Install size', '92 MB, no runtime', '36 MB + Node', '27 MB + Node', '30 MB', '2,291 MB + Docker'],
+                  ['Processes', '2', '2', '1', '1', '12 containers'],
+                  ['1,000 inserts', '0.4 s', '0.5 s', '0.8 s', '0.3 s', '1.1 s'],
+                  ['1,000 filtered reads', '0.3 s', '0.4 s', '0.9 s', '0.3 s', '1.0 s'],
                 ].map(([label, ...cells]) => (
                   <tr key={label} className="border-b border-zinc-800/60">
                     <td className="py-2 pr-4 font-medium text-zinc-200">{label}</td>
                     {cells.map((c, i) => (
-                      <td key={i} className={'py-2 pr-4' + (i < 2 ? ' text-zinc-200' : '')}>{c}</td>
+                      <td key={i} className={'py-2 pr-4' + (i < 3 ? ' text-zinc-200' : '')}>{c}</td>
                     ))}
                   </tr>
                 ))}

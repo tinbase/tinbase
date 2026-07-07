@@ -119,7 +119,7 @@ export default function Home() {
               <div className="mt-1 text-sm text-zinc-400">from command to serving requests</div>
             </Card>
             <Card>
-              <div className="text-3xl font-bold text-emerald-400">57 / 57</div>
+              <div className="text-3xl font-bold text-emerald-400">114 / 114</div>
               <div className="mt-1 text-sm text-zinc-400">integration tests pass with the real supabase-js</div>
             </Card>
           </div>
