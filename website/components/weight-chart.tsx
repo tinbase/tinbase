@@ -25,13 +25,15 @@ import { useState } from 'react'
 const INSTALL = '#199e70' // aqua — install footprint
 const RAM = '#3987e5' // blue — memory under load
 
+// `featured` rows are the ones shown when the chart is collapsed (landing):
+// the lightest engine, a real-Postgres engine, and the incumbent to beat.
 const DATA = [
-  { name: 'tinbase (pg-mem)', db: 'Postgres subset · in-memory', self: true, install: 3.6, ram: 185, note: 'pure JS, no WASM — lightest to ship; more RAM under load' },
+  { name: 'tinbase (pg-mem)', db: 'Postgres subset · in-memory', self: true, featured: true, install: 3.6, ram: 185, note: 'pure JS, no WASM — lightest to ship; more RAM under load' },
   { name: 'tinbase (wasm)', db: 'real Postgres · PGlite', self: true, install: 27, ram: 640, note: 'PGlite WASM — portable, heavy heap' },
   { name: 'PocketBase', db: 'SQLite · different API', self: false, flag: true, install: 30, ram: 24, note: 'Go binary + SQLite · v0.39.5 — not supabase-js compatible' },
-  { name: 'tinbase (native)', db: 'real Postgres 17', self: true, install: 36, ram: 100, note: 'embedded native Postgres 17' },
+  { name: 'tinbase (native)', db: 'real Postgres 17', self: true, featured: true, install: 36, ram: 100, note: 'embedded native Postgres 17' },
   { name: 'tinbase (binary)', db: 'real Postgres 17', self: true, install: 92, ram: 66, note: 'single executable, no runtime needed' },
-  { name: 'Supabase local', db: 'Postgres · 12 containers', self: false, install: 2291, ram: 1626, note: '12 Docker containers · CLI 2.40 — off the chart' },
+  { name: 'Supabase local', db: 'Postgres · 12 containers', self: false, featured: true, install: 2291, ram: 1626, note: '12 Docker containers · CLI 2.40 — off the chart' },
 ]
 // Linear axis sized to the single-process engines; the Docker stack is clipped.
 // MAXW < 100 reserves room for the value label (and torn end) after each bar.
@@ -44,8 +46,13 @@ const SERIES = [
   { key: 'ram' as const, label: 'Memory under load', color: RAM },
 ]
 
-export function WeightChart() {
-  const [hover, setHover] = useState<{ i: number; key: 'install' | 'ram' } | null>(null)
+export function WeightChart({ collapsible = false }: { collapsible?: boolean }) {
+  const [hover, setHover] = useState<{ name: string; key: 'install' | 'ram' } | null>(null)
+  const [expanded, setExpanded] = useState(false)
+  const showAll = !collapsible || expanded
+  const rowsData = showAll ? DATA : DATA.filter((d) => d.featured)
+  const hiddenCount = DATA.length - DATA.filter((d) => d.featured).length
+  const pocketVisible = rowsData.some((d) => d.flag)
 
   return (
     <figure aria-label="Install footprint and memory under load in megabytes, lower is better">
@@ -65,7 +72,7 @@ export function WeightChart() {
 
       <div className="overflow-x-auto">
        <div className="min-w-[460px] space-y-4">
-        {DATA.map((d, i) => (
+        {rowsData.map((d) => (
           <div
             key={d.name}
             className="grid grid-cols-[8.5rem_1fr] items-center gap-3 sm:grid-cols-[12rem_1fr]"
@@ -82,13 +89,13 @@ export function WeightChart() {
               {SERIES.map((s) => {
                 const mb = d[s.key]
                 const clipped = mb > DOMAIN
-                const active = hover?.i === i && hover.key === s.key
+                const active = hover?.name === d.name && hover.key === s.key
                 const dim = hover !== null && !active
                 return (
                   <div
                     key={s.key}
                     className="relative flex h-4 items-center"
-                    onMouseEnter={() => setHover({ i, key: s.key })}
+                    onMouseEnter={() => setHover({ name: d.name, key: s.key })}
                     onMouseLeave={() => setHover(null)}
                   >
                     <div
@@ -128,9 +135,27 @@ export function WeightChart() {
        </div>
       </div>
 
+      {collapsible && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-emerald-400 transition-colors hover:text-emerald-300"
+          aria-expanded={expanded}
+        >
+          {expanded ? 'Show fewer engines' : `Show all ${DATA.length} engines`}
+          <span aria-hidden="true" className={'transition-transform ' + (expanded ? 'rotate-180' : '')}>
+            ↓
+          </span>
+        </button>
+      )}
+
       <p className="mt-6 text-xs text-zinc-500">
-        <span className="text-amber-400">†</span> PocketBase is the smallest footprint, but it is
-        SQLite behind a different API — not a drop-in for supabase-js, unlike every tinbase engine.
+        {pocketVisible && (
+          <>
+            <span className="text-amber-400">†</span> PocketBase is the smallest footprint, but it is
+            SQLite behind a different API — not a drop-in for supabase-js, unlike every tinbase engine.{' '}
+          </>
+        )}
         Linear scale; Supabase local (2,291 / 1,626 MB) is a 12-container Docker stack whose bars run
         off the axis (torn end) so the single-process engines stay comparable. pg-mem trades runtime
         RAM for the smallest real install: 3.6 MB, pure JS, no WASM. Physical footprint of the whole

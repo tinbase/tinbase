@@ -1,7 +1,7 @@
 import { ImageResponse } from 'next/og'
 
 export const runtime = 'nodejs'
-export const alt = 'tinbase — the Supabase backend that fits in a tin'
+export const alt = 'tinbase — the Supabase-compatible backend that fits in a tin'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
@@ -33,7 +33,7 @@ export default function OgImage() {
       >
         {Logo}
         <div style={{ display: 'flex', marginTop: 48, fontSize: 64, fontWeight: 700, letterSpacing: -2 }}>
-          <span>The Supabase backend that fits in a&nbsp;</span>
+          <span>The Supabase-compatible backend that fits in a&nbsp;</span>
           <span style={{ color: '#34d399' }}>tin</span>
         </div>
         <div style={{ display: 'flex', marginTop: 28, fontSize: 28, color: '#a1a1aa', textAlign: 'center', maxWidth: 900 }}>
