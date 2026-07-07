@@ -3,6 +3,121 @@
  * Supabase project: roles, auth schema, storage schema, helper functions,
  * migration bookkeeping, and the realtime CDC plumbing.
  */
+/**
+ * Reduced bootstrap for subset engines (pg-mem) that can't run plpgsql, RLS
+ * policies, extensions, or LISTEN/NOTIFY. Just the schemas, core tables, and
+ * SQL-language auth helpers needed for the REST + auth CRUD surface. No RLS is
+ * enforced here — this path is for local-dev/preview only.
+ */
+export const MINIMAL_BOOTSTRAP_SQL = `
+create schema if not exists auth;
+create schema if not exists storage;
+create schema if not exists supabase_migrations;
+
+create table if not exists auth.users (
+  id uuid primary key default gen_random_uuid(),
+  aud text default 'authenticated',
+  role text default 'authenticated',
+  email text unique,
+  encrypted_password text,
+  email_confirmed_at timestamptz,
+  last_sign_in_at timestamptz,
+  raw_app_meta_data jsonb default '{}'::jsonb,
+  raw_user_meta_data jsonb default '{}'::jsonb,
+  is_super_admin boolean default false,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  phone text unique,
+  phone_confirmed_at timestamptz,
+  banned_until timestamptz,
+  deleted_at timestamptz,
+  is_anonymous boolean default false
+);
+
+create table if not exists auth.refresh_tokens (
+  id bigserial primary key,
+  token text unique not null,
+  user_id uuid not null,
+  parent text,
+  session_id uuid,
+  revoked boolean default false,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table if not exists auth.one_time_tokens (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid,
+  email text not null,
+  token_type text not null,
+  token text not null,
+  created_at timestamptz default now(),
+  expires_at timestamptz not null
+);
+
+create table if not exists auth.identities (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  provider text not null,
+  provider_id text not null,
+  identity_data jsonb default '{}'::jsonb,
+  last_sign_in_at timestamptz default now(),
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  unique (provider, provider_id)
+);
+
+create table if not exists auth.flow_state (
+  id uuid primary key default gen_random_uuid(),
+  provider text not null,
+  provider_state text not null unique,
+  redirect_to text,
+  code_challenge text,
+  code_challenge_method text,
+  auth_code text unique,
+  user_id uuid,
+  created_at timestamptz default now(),
+  expires_at timestamptz not null
+);
+
+create table if not exists storage.buckets (
+  id text primary key,
+  name text not null unique,
+  owner uuid,
+  public boolean default false,
+  file_size_limit bigint,
+  allowed_mime_types text[],
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table if not exists storage.objects (
+  id uuid primary key default gen_random_uuid(),
+  bucket_id text not null,
+  name text not null,
+  owner uuid,
+  version text,
+  metadata jsonb default '{}'::jsonb,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  last_accessed_at timestamptz default now(),
+  unique (bucket_id, name)
+);
+
+create table if not exists supabase_migrations.schema_migrations (
+  version text primary key,
+  name text,
+  statements text[],
+  applied_at timestamptz default now()
+);
+
+create table if not exists supabase_migrations.seed_files (
+  path text primary key,
+  hash text,
+  applied_at timestamptz default now()
+);
+`
+
 export const BOOTSTRAP_SQL = `
 -- ── Extensions ─────────────────────────────────────────────────────────────
 -- Supabase enables these by default and migrations lean on them

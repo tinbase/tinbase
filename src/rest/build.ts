@@ -37,11 +37,17 @@ export class QueryBuilder {
   private aliasCounter = 0
   private consumedPaths = new Set<string>([''])
 
+  /** pg-mem can't bind a table alias in UPDATE/DELETE; omit it for subset engines. */
+  private aliasMutations: boolean
+
   constructor(
     private schema: string,
     private info: SchemaInfo,
-    private q: ParsedQuery
-  ) {}
+    private q: ParsedQuery,
+    opts?: { aliasMutations?: boolean }
+  ) {
+    this.aliasMutations = opts?.aliasMutations ?? true
+  }
 
   private nextAlias(): string {
     return `_t${this.aliasCounter++}`
@@ -155,9 +161,10 @@ export class QueryBuilder {
     for (const c of keys) this.requireColumn(tinfo, c)
     const params: unknown[] = []
     const sets = keys.map((c) => `${quoteIdent(c)} = ${this.pushParam(params, tinfo, c, body[c])}`)
-    const alias = 't0'
+    const alias = this.aliasMutations ? 't0' : ''
+    const asClause = alias ? ` as ${quoteIdent(alias)}` : ''
     const where = this.baseWhere(alias, [])
-    const update = `update ${this.qualify(table)} as ${quoteIdent(alias)} set ${sets.join(', ')}${where} returning *`
+    const update = `update ${this.qualify(table)}${asClause} set ${sets.join(', ')}${where} returning *`
     this.assertAllPathsConsumed()
     if (!opts.returning) return { sql: update.replace(/ returning \*$/, ''), params }
     return { sql: this.wrapMutation(update, table, true), params }
@@ -165,9 +172,10 @@ export class QueryBuilder {
 
   buildDelete(table: string, opts: { returning: boolean }): BuiltQuery {
     this.table(table)
-    const alias = 't0'
+    const alias = this.aliasMutations ? 't0' : ''
+    const asClause = alias ? ` as ${quoteIdent(alias)}` : ''
     const where = this.baseWhere(alias, [])
-    const del = `delete from ${this.qualify(table)} as ${quoteIdent(alias)}${where} returning *`
+    const del = `delete from ${this.qualify(table)}${asClause}${where} returning *`
     this.assertAllPathsConsumed()
     if (!opts.returning) return { sql: del.replace(/ returning \*$/, ''), params: [] }
     return { sql: this.wrapMutation(del, table, true), params: [] }
@@ -470,9 +478,12 @@ export class QueryBuilder {
       params.push(JSON.stringify(value))
       return `$${params.length}${cast}`
     }
-    if (udt.startsWith('_') && Array.isArray(value)) {
+    if (Array.isArray(value)) {
       params.push(pgArrayLiteral(value))
-      return `$${params.length}${cast}`
+      // recognized array udt (`_text`) gets a `::text[]` cast; for engines that
+      // report an unhelpful udt (pg-mem says "array"), skip the cast and let the
+      // target column coerce the literal
+      return `$${params.length}${udt.startsWith('_') ? cast : ''}`
     }
     if (typeof value === 'object') {
       params.push(JSON.stringify(value))
@@ -489,7 +500,8 @@ export class QueryBuilder {
 export function renderColumnExpr(alias: string, raw: string): string {
   const tokens = raw.split(/(->>|->)/)
   const base = unquote(tokens[0].trim())
-  let expr = `${quoteIdent(alias)}.${quoteIdent(base)}`
+  // empty alias → unqualified column (used for UPDATE/DELETE on subset engines)
+  let expr = alias ? `${quoteIdent(alias)}.${quoteIdent(base)}` : quoteIdent(base)
   for (let i = 1; i < tokens.length; i += 2) {
     const op = tokens[i]
     const key = tokens[i + 1]?.trim() ?? ''

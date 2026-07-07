@@ -10,7 +10,7 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { createBackend, generateTypes } from './index.js'
+import { createBackend, generateTypes, createPgmemEngine } from './index.js'
 import { computeDbDiff, shadowNativeDataDir } from './node/db-diff.js'
 import { createNativeEngine } from './node/native/engine.js'
 import { FsStorageDriver } from './node/fs-driver.js'
@@ -37,7 +37,7 @@ interface CliOptions {
   storageDir: string
   jwtSecret: string
   memory: boolean
-  engine: 'wasm' | 'native'
+  engine: 'wasm' | 'native' | 'pgmem'
   diffFile?: string
 }
 
@@ -55,7 +55,7 @@ function parseArgs(argv: string[]): CliOptions {
     storageDir: '',
     jwtSecret: process.env.TINBASE_JWT_SECRET ?? DEFAULT_JWT_SECRET,
     memory: false,
-    engine: (process.env.TINBASE_ENGINE as 'wasm' | 'native') ?? (IS_BINARY ? 'native' : 'wasm'),
+    engine: (process.env.TINBASE_ENGINE as 'wasm' | 'native' | 'pgmem') ?? (IS_BINARY ? 'native' : 'wasm'),
   }
   for (let i = 0; i < args.length; i++) {
     const a = args[i]
@@ -70,11 +70,11 @@ function parseArgs(argv: string[]): CliOptions {
     else if (a === '-f' || a === '--file') opts.diffFile = next()
     else if (a === '--engine') {
       const v = next()
-      if (v !== 'wasm' && v !== 'native') {
-        console.error(`--engine must be wasm or native, got: ${v}`)
+      if (v !== 'wasm' && v !== 'native' && v !== 'pgmem') {
+        console.error(`--engine must be wasm, native, or pgmem, got: ${v}`)
         process.exit(1)
       }
-      opts.engine = v
+      opts.engine = v as 'wasm' | 'native' | 'pgmem'
     }
     else if (a === '--help' || a === '-h') {
       printHelp()
@@ -124,8 +124,9 @@ Options:
       --storage-dir <p> storage files directory (default <dir>/.tinbase/storage)
       --jwt-secret <s>  JWT secret (or TINBASE_JWT_SECRET env var)
       --memory          in-memory database (no persistence, wasm engine only)
-      --engine <e>      wasm (PGlite, default) or native (embedded Postgres,
-                        ~4x lighter memory; downloads binaries on first run)
+      --engine <e>      wasm (PGlite, default), native (embedded Postgres),
+                        or pgmem (ultralight in-memory subset — no RLS/realtime,
+                        local dev / preview only)
 `)
 }
 
@@ -236,7 +237,12 @@ async function main(): Promise<void> {
           dataDir: join(opts.dir, '.tinbase', 'pgdata'),
           log: (msg) => console.log(`  ${msg}`),
         })
-      : undefined
+      : opts.engine === 'pgmem'
+        ? await createPgmemEngine()
+        : undefined
+  if (opts.engine === 'pgmem') {
+    console.log('  ⚠ pg-mem engine: in-memory, no RLS/realtime/functions — local dev / preview only')
+  }
 
   const backend = await createBackend({
     engine,
@@ -281,7 +287,7 @@ async function main(): Promise<void> {
 
            API URL: ${server.url}
           Admin UI: ${server.url}/_/
-            Engine: ${opts.engine === 'native' ? 'native postgres' : `PGlite (${opts.memory ? 'in-memory' : opts.dataDir})`}
+            Engine: ${opts.engine === 'native' ? 'native postgres' : opts.engine === 'pgmem' ? 'pg-mem (in-memory, lite)' : `PGlite (${opts.memory ? 'in-memory' : opts.dataDir})`}
            Storage: ${opts.storageDir}
         Migrations: ${project.migrations.length} file(s)
          Functions: ${functions.size > 0 ? [...functions.keys()].join(', ') : 'none'}

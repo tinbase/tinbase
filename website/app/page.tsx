@@ -13,7 +13,7 @@ const FEATURES = [
   },
   {
     title: 'Real Postgres, really small',
-    body: 'RLS policies, auth.uid(), jsonb, triggers, foreign keys. Choose embedded native Postgres 17 (44 MB RAM) or PGlite WASM for zero-setup portability.',
+    body: 'RLS policies, auth.uid(), jsonb, triggers, foreign keys. Choose embedded native Postgres 17 (59 MB RAM) or PGlite WASM for zero-setup portability.',
   },
   {
     title: 'One file to deploy',
@@ -119,8 +119,8 @@ export default function Home() {
               <div className="mt-1 text-sm text-zinc-400">from command to serving requests</div>
             </Card>
             <Card>
-              <div className="text-3xl font-bold text-emerald-400">114 / 114</div>
-              <div className="mt-1 text-sm text-zinc-400">integration tests pass with the real supabase-js</div>
+              <div className="text-3xl font-bold text-emerald-400">120 / 120</div>
+              <div className="mt-1 text-sm text-zinc-400">tests pass with the real supabase-js</div>
             </Card>
           </div>
         </section>

@@ -11,6 +11,7 @@ const DATA = [
   { name: 'PocketBase', db: 'SQLite', mb: 24, self: false, detail: 'Go binary embedding SQLite · v0.39.5' },
   { name: 'tinbase (binary)', db: 'real Postgres + RLS', mb: 66, self: true, detail: 'single file · real Postgres 17 with RLS — the server deploy' },
   { name: 'tinbase (native)', db: 'real Postgres + RLS', mb: 100, self: true, detail: 'embedded native Postgres 17 via Node' },
+  { name: 'tinbase (pg-mem)', db: 'in-memory subset', mb: 185, self: true, detail: 'ultralight lite engine (no RLS/realtime) · 3.6 MB install · pure JS, runs in the browser' },
   { name: 'tinbase (wasm)', db: 'real Postgres + RLS', mb: 640, self: true, detail: 'PGlite WASM heap (~575–650 MB) — the browser/portability engine' },
   { name: 'Supabase local', db: 'Postgres', mb: 1626, self: false, detail: '12 Docker containers · CLI 2.40' },
 ]

@@ -57,5 +57,8 @@
   "homepage": "https://tinbase.vercel.app",
   "bugs": {
     "url": "https://github.com/sanketsahu/tinbase/issues"
+  },
+  "optionalDependencies": {
+    "pg-mem": "^3.0.14"
   }
 }

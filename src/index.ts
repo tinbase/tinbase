@@ -24,6 +24,8 @@ import { DEFAULT_JWT_SECRET, type BackendConfig, type MigrationFile, type Reques
 
 export * from './types.js'
 export { Database } from './db/database.js'
+export { createPgmemEngine } from './db/pgmem-engine.js'
+export { createPgliteEngine } from './db/pglite-engine.js'
 export { MemoryStorageDriver } from './storage/driver.js'
 export { RealtimeEngine, type RealtimeSocketLike } from './realtime/engine.js'
 export { signJwt, verifyJwt, decodeJwt } from './jwt.js'
