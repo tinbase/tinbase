@@ -125,8 +125,8 @@ Options:
       --jwt-secret <s>  JWT secret (or TINBASE_JWT_SECRET env var)
       --memory          in-memory database (no persistence, wasm engine only)
       --engine <e>      wasm (PGlite, default), native (embedded Postgres),
-                        or pgmem (ultralight in-memory subset — no RLS/realtime,
-                        local dev / preview only)
+                        or pgmem (ultralight in-memory subset — no RLS, cron,
+                        or pgmq; local dev / preview only)
 `)
 }
 
@@ -241,7 +241,7 @@ async function main(): Promise<void> {
         ? await createPgmemEngine()
         : undefined
   if (opts.engine === 'pgmem') {
-    console.log('  ⚠ pg-mem engine: in-memory, no RLS/realtime/functions — local dev / preview only')
+    console.log('  ⚠ pg-mem engine: in-memory subset — no RLS, cron, or pgmq (realtime is unfiltered) — local dev / preview only')
   }
 
   const backend = await createBackend({

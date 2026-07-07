@@ -71,7 +71,7 @@ tinbase db diff    # DDL for schema changes not yet in migrations (-f <name> to 
 - **wasm** (default): PGlite. Zero setup, runs anywhere Node runs - and in the browser. Its WASM heap sits around ~575-650 MB and does not shrink under load.
 - **native**: embedded native Postgres 17. First run downloads platform binaries (~12 MB, from [theseus-rs/postgresql-binaries](https://github.com/theseus-rs/postgresql-binaries), cached in `~/.cache/tinbase`), then `initdb` with memory-lean settings. ~59 MB RAM at boot. Listens only on a private unix socket (0700 dir, trust auth) - never TCP. macOS/Linux on x64/arm64; on Windows use wasm.
 
-- **pgmem** (`--engine pgmem`): an ultralight, pure-JS, in-memory subset via [pg-mem](https://github.com/oguimbal/pg-mem) — **~3.6 MB install, no WASM**, so it's the lightest option for the browser (RapidNative local-dev / previews). Runs the REST CRUD surface + email/password auth; RLS, realtime, functions, pgmq, and cron are **not** available (RLS DDL in migrations is skipped, not fatal). Local-dev / preview only — never production.
+- **pgmem** (`--engine pgmem`): an ultralight, pure-JS, in-memory subset via [pg-mem](https://github.com/oguimbal/pg-mem) — **~3.6 MB install, no WASM**, so it's the lightest option for the browser (RapidNative local-dev / previews). Runs the REST CRUD surface, email/password auth, **edge functions, realtime (broadcast/presence + `postgres_changes`), and database webhooks**. pg-mem has no triggers or LISTEN/NOTIFY, so realtime/webhook change events are synthesized in JS by the REST layer (every write goes through it in-process). What's *not* here: **RLS** (so realtime/webhook events are delivered unfiltered, not per-subscriber), **cron**, and **pgmq** - RLS DDL in migrations is skipped, not fatal. Local-dev / preview only — never production.
 
 The wasm and native engines run the identical bootstrap, migrations, RLS, and realtime CDC - the test suite passes on both (`TINBASE_TEST_ENGINE=native npm test`).
 
@@ -185,7 +185,7 @@ Measured on an Apple Silicon Mac (48 GB), macOS 15. Same workload for all three:
 | 1,000 inserts | 0.4 s | 0.5 s | 0.8 s | 0.8 s | 0.3 s | 1.1 s |
 | 1,000 filtered reads | 0.3 s | 0.4 s | 0.8 s | 0.9 s | 0.3 s | 1.0 s |
 
-¹ **pg-mem** is a pure-JS in-memory subset (local dev / preview) — no RLS, realtime, functions, pgmq, or cron, but a **3.6 MB install** and pure JS (no WASM), the lightest option for the browser. See [Engines](#engines).
+¹ **pg-mem** is a pure-JS in-memory subset (local dev / preview) — no RLS, cron, or pgmq (realtime/webhooks work but deliver unfiltered), but a **3.6 MB install** and pure JS (no WASM), the lightest option for the browser. See [Engines](#engines).
 ² The wasm figure is essentially PGlite's WASM heap, which measures anywhere in ~575–650 MB depending on GC timing — treat it as a band, not a point. It does not shrink under load.
 ³ Native: Postgres 17 binaries + `dist`. pg-mem: `dist` + `pg-mem`. Wasm: `dist` + `@electric-sql/pglite`. All exclude the Node runtime you already have.
 ⁴ Sum of the Docker image sizes the default local stack runs, excluding Docker Desktop itself.

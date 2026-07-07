@@ -91,12 +91,17 @@ export class RestHandler {
         const body = await readJsonBody(req)
         const rows = Array.isArray(body) ? body : [body]
         const returning = prefer.return === 'representation' || wantsObject
+        // engines without a CDC trigger (pg-mem) need the affected rows to
+        // synthesize change events, so fetch them even when the client didn't
+        // ask for a representation.
+        const cdc = this.db.jsCdc ? { schema, table, type: 'INSERT' as const } : null
+        const queryReturning = returning || !!cdc
         const built = builder.buildInsert(table, rows as Record<string, unknown>[], {
           upsert: prefer.resolution,
           missingDefault: prefer.missing === 'default',
-          returning,
+          returning: queryReturning,
         })
-        return this.runMutation(ctx, built, { status: 201, returning, wantsObject, prefer })
+        return this.runMutation(ctx, built, { status: 201, returning, queryReturning, wantsObject, prefer, cdc })
       }
 
       case 'PATCH': {
@@ -110,14 +115,18 @@ export class RestHandler {
           })
         }
         const returning = prefer.return === 'representation' || wantsObject
-        const built = builder.buildUpdate(table, body as Record<string, unknown>, { returning })
-        return this.runMutation(ctx, built, { status: 200, returning, wantsObject, prefer })
+        const cdc = this.db.jsCdc ? { schema, table, type: 'UPDATE' as const } : null
+        const queryReturning = returning || !!cdc
+        const built = builder.buildUpdate(table, body as Record<string, unknown>, { returning: queryReturning })
+        return this.runMutation(ctx, built, { status: 200, returning, queryReturning, wantsObject, prefer, cdc })
       }
 
       case 'DELETE': {
         const returning = prefer.return === 'representation' || wantsObject
-        const built = builder.buildDelete(table, { returning })
-        return this.runMutation(ctx, built, { status: 200, returning, wantsObject, prefer })
+        const cdc = this.db.jsCdc ? { schema, table, type: 'DELETE' as const } : null
+        const queryReturning = returning || !!cdc
+        const built = builder.buildDelete(table, { returning: queryReturning })
+        return this.runMutation(ctx, built, { status: 200, returning, queryReturning, wantsObject, prefer, cdc })
       }
 
       default:
@@ -128,15 +137,27 @@ export class RestHandler {
   private async runMutation(
     ctx: RequestContext,
     built: { sql: string; params: unknown[] },
-    opts: { status: number; returning: boolean; wantsObject: boolean; prefer: Prefer }
+    opts: {
+      status: number
+      returning: boolean
+      queryReturning: boolean
+      wantsObject: boolean
+      prefer: Prefer
+      cdc: { schema: string; table: string; type: 'INSERT' | 'UPDATE' | 'DELETE' } | null
+    }
   ): Promise<Response> {
     const { rows, affected } = await this.db.withContext(ctx, async (query) => {
       const res = await query(built.sql, built.params)
-      if (opts.returning) {
+      if (opts.queryReturning) {
         return { rows: (res.rows[0] as { body: unknown[] }).body, affected: null }
       }
       return { rows: null, affected: res.affectedRows ?? 0 }
     })
+
+    // synthesize CDC events for trigger-less engines (pg-mem)
+    if (opts.cdc && rows) {
+      this.db.emitCdc(opts.cdc, rows as Record<string, unknown>[])
+    }
 
     const countHeader: Record<string, string> =
       opts.prefer.count !== undefined
