@@ -1,7 +1,6 @@
 import Image from 'next/image'
 import Link from 'next/link'
-import { FootprintChart } from '@/components/footprint-chart'
-import { InstallChart } from '@/components/install-chart'
+import { WeightChart } from '@/components/weight-chart'
 import { SiteNav } from '@/components/site-nav'
 import { Badge, Card, LinkButton } from '@/components/ui'
 import { Code } from '@/components/code'
@@ -108,15 +107,7 @@ export default function Home() {
             APIs from a single file at a fraction of the memory.
           </p>
           <Card className="mt-10 p-8">
-            <FootprintChart />
-          </Card>
-          <p className="mt-8 max-w-2xl text-zinc-400">
-            Memory is one axis; install footprint is the other. The lightest engine to ship is the
-            pure-JS pg-mem subset — 3.6 MB, no WASM, no native binary — ideal for the browser and
-            embedded previews.
-          </p>
-          <Card className="mt-6 p-8">
-            <InstallChart />
+            <WeightChart />
           </Card>
           <div className="mt-6 grid gap-4 sm:grid-cols-3">
             <Card>

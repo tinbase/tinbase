@@ -1,7 +1,6 @@
 import { SiteNav } from '@/components/site-nav'
 import { Code } from '@/components/code'
-import { FootprintChart } from '@/components/footprint-chart'
-import { InstallChart } from '@/components/install-chart'
+import { WeightChart } from '@/components/weight-chart'
 
 const SECTIONS = [
   { id: 'why', label: 'Why tinbase' },
@@ -329,16 +328,13 @@ const supabase = createClient('http://localhost', backend.anonKey, {
             containers. Apple Silicon, macOS 15.
           </P>
           <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-6">
-            <FootprintChart />
+            <WeightChart />
           </div>
           <P>
-            Runtime memory is only one axis. The other is what it costs to <em>ship</em> an engine —
-            and there the ranking flips: pg-mem is a 3.6 MB pure-JS install with no WASM and no native
-            binary, the lightest thing to embed even though it uses more RAM under load.
+            The two axes tell different stories: pg-mem uses the most RAM under load of the tinbase
+            engines, yet is by far the lightest to <em>ship</em> — a 3.6 MB pure-JS install with no
+            WASM and no native binary, ideal for the browser and embedded previews.
           </P>
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-6">
-            <InstallChart />
-          </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm">
               <thead>
