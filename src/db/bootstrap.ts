@@ -17,9 +17,25 @@ begin
     begin
       execute format('create extension if not exists %I with schema extensions', ext);
     exception when others then
-      -- extension not bundled in this engine; continue
+      -- extension not bundled in this engine build; continue
     end;
   end loop;
+end $$;
+
+-- uuid-ossp isn't in every Postgres build (it needs an external UUID lib at
+-- build time — e.g. the theseus Linux binaries omit it). uuid_generate_v4() is
+-- the single most-used function from it, so shim it onto core gen_random_uuid()
+-- (also a v4 UUID) whenever the real extension isn't present, so migrations
+-- that call it work identically on every engine and platform.
+do $$
+begin
+  if not exists (
+    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where p.proname = 'uuid_generate_v4' and n.nspname in ('public', 'extensions')
+  ) then
+    create function extensions.uuid_generate_v4() returns uuid
+      language sql volatile as 'select gen_random_uuid()';
+  end if;
 end $$;
 
 -- Make extension functions resolvable unqualified (uuid_generate_v4(), …) on
