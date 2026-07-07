@@ -200,6 +200,10 @@ Rough coverage of the supabase-js SDK surface, measured against what each sub-li
 npm test
 ```
 
+## Roadmap
+
+tinbase aims to be a local, Docker-free replacement for `supabase start` where **almost everything just works**. The North Star, the in-scope/out-of-scope line, the current coverage table, and the phased plan live in [ROADMAP.md](ROADMAP.md).
+
 ## Why
 
 tinbase was built for [lifo](https://lifo.sh) - a project that maps Linux APIs into the browser - to let **Expo apps run fully in the browser with full-stack capability** (database, auth, storage, realtime, no server). It is part of [RapidNative](https://rapidnative.com). That origin drives the architecture:
