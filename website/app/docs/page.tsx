@@ -239,7 +239,7 @@ const supabase = createClient('http://localhost', backend.anonKey, {
               <tbody className="text-zinc-400">
                 {[
                   ['Database (postgrest-js)', '~85%', 'aggregates in select, .explain(), .csv()'],
-                  ['Auth (auth-js)', '~65%', 'OAuth providers, MFA, SSO, PKCE'],
+                  ['Auth (auth-js)', '~80%', 'MFA, SSO/SAML, phone auth'],
                   ['Storage (storage-js)', '~80%', 'resumable uploads, image transforms'],
                   ['Realtime (realtime-js)', '~70%', 'RLS-filtered fan-out, private channels'],
                   ['Edge Functions', '~60%', 'Deno runtime compat, import maps'],
@@ -254,7 +254,7 @@ const supabase = createClient('http://localhost', backend.anonKey, {
             </table>
           </div>
           <P>
-            Roughly 75% of the SDK surface overall — but ~90% of what a typical CRUD + auth + storage
+            Roughly 80% of the SDK surface overall — but ~90% of what a typical CRUD + auth + storage
             + realtime app actually calls.
           </P>
 

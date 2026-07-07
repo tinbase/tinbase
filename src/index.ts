@@ -77,7 +77,14 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
       log(`[mail] to=${msg.to} subject="${msg.subject}"\n${msg.text}`)
     },
   }
-  const auth = new AuthHandler(db, { jwtSecret, siteUrl, jwtExpiry, mailer })
+  const auth = new AuthHandler(db, {
+    jwtSecret,
+    siteUrl,
+    jwtExpiry,
+    mailer,
+    oauthProviders: config.oauthProviders,
+    oauthFetch: config.oauthFetch,
+  })
   const storage = new StorageHandler(db, config.storageDriver ?? new MemoryStorageDriver(), { jwtSecret })
   const realtime = new RealtimeEngine(db)
   await realtime.start()
@@ -152,8 +159,11 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
         return withCors(await storage.handle(req, { role: 'anon', claims: null }, url))
       }
     }
-    if (path === '/auth/v1/verify' && req.method === 'GET') {
-      // magic-link/recovery clicks arrive from email clients with no apikey
+    if (
+      (path === '/auth/v1/verify' || path === '/auth/v1/authorize' || path === '/auth/v1/callback') &&
+      (req.method === 'GET' || req.method === 'POST')
+    ) {
+      // email-link clicks and OAuth provider redirects arrive without an apikey
       return withCors(await auth.handle(req, { role: 'anon', claims: null }, url))
     }
     if (path.startsWith('/auth/v1/')) {

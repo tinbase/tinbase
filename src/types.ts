@@ -33,6 +33,10 @@ export interface BackendConfig {
   functions?: Map<string, import('./functions/handler.js').EdgeFunction> | Record<string, import('./functions/handler.js').EdgeFunction>
   /** Mail transport for OTP/magic-link/recovery emails. Default: console logger. */
   mailer?: Mailer
+  /** OAuth providers, e.g. { google: { clientId, clientSecret } }. Served at /auth/v1/authorize. */
+  oauthProviders?: Record<string, import('./auth/oauth.js').OAuthProviderConfig>
+  /** Injectable fetch for OAuth provider calls (tests point this at a mock provider). */
+  oauthFetch?: typeof fetch
   /** Print startup/debug logs. */
   log?: (msg: string) => void
 }

@@ -177,18 +177,18 @@ Rough coverage of the supabase-js SDK surface, measured against what each sub-li
 | Module | Coverage | Supported | Missing |
 | --- | --- | --- | --- |
 | Database (`postgrest-js`) | ~85% | full filter grammar, embeds (to-one/to-many/m2m/nested/`!inner`), JSON paths, upsert, count, single/maybeSingle, RPC | aggregates in select, full spread embeds, `.explain()`, `.csv()`, geojson |
-| Auth (`auth-js`) | ~65% | email/password, anonymous sign-in, OTP + magic links + password recovery (pluggable mailer, console default), refresh rotation, user updates, admin CRUD | OAuth providers, MFA, SSO/SAML, PKCE, phone auth |
+| Auth (`auth-js`) | ~80% | email/password, anonymous sign-in, OTP + magic links + password recovery (pluggable mailer), OAuth providers (Google/GitHub presets + generic) with PKCE and identity linking, refresh rotation, user updates, admin CRUD | MFA, SSO/SAML, phone auth |
 | Storage (`storage-js`) | ~80% | buckets, upload/download, signed URLs + signed uploads, list/move/copy/remove, size/MIME limits | resumable (TUS) uploads, image transformations |
 | Realtime (`realtime-js`) | ~70% | postgres_changes with filters, broadcast (incl. binary), presence, v1+v2 serializers | RLS-filtered fan-out (WALRUS), private channel auth, DB-triggered broadcast |
 | Edge Functions (`functions-js`) | ~60% | `invoke()` with JSON/text bodies, auth context, project-dir loading | Deno runtime compat, import maps, `supabase functions deploy` |
 
-**Overall: roughly 75% of the SDK surface - but ~90% of what a typical CRUD + auth + storage + realtime app actually calls.** The biggest real-world gaps are OAuth logins and edge functions.
+**Overall: roughly 80% of the SDK surface - but ~90% of what a typical CRUD + auth + storage + realtime app actually calls.** The biggest real-world gaps are OAuth logins and edge functions.
 
 ## Known gaps
 
 - `postgres_changes` does not apply RLS to fan-out (all subscribers see change events); hosted Supabase filters via WALRUS.
 - Spread embeds (`...rel(col)`) support flat column lists only; aggregate functions in `select` are not implemented.
-- Auth: no OAuth providers, MFA, or SSO. OTP/magic-link/recovery emails go through a pluggable `mailer` (the default just logs them to the console).
+- Auth: OAuth works for any OAuth2/OIDC provider (Google & GitHub have built-in presets; configure via `TINBASE_OAUTH_<PROVIDER>_CLIENT_ID`/`_CLIENT_SECRET`). Still missing: MFA, SSO/SAML, phone auth. OTP/magic-link/recovery emails go through a pluggable `mailer` (default logs to console).
 - `pg_notify` payloads cap at ~8 kB - realtime events for larger rows arrive with `record: null` and an `errors` entry, like Supabase's "payload too large".
 - One writer at a time: PGlite is single-connection, and the native engine currently serializes requests over one connection for parity (a connection pool is a straightforward future upgrade). Fine for dev tools and small apps, not for high-concurrency production.
 

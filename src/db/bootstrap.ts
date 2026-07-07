@@ -113,6 +113,32 @@ create table if not exists auth.one_time_tokens (
   expires_at timestamptz not null
 );
 
+create table if not exists auth.identities (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  provider text not null,
+  provider_id text not null,
+  identity_data jsonb default '{}'::jsonb,
+  last_sign_in_at timestamptz default now(),
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  unique (provider, provider_id)
+);
+
+-- OAuth / PKCE flow state, bridging /authorize → provider → /callback → exchange
+create table if not exists auth.flow_state (
+  id uuid primary key default gen_random_uuid(),
+  provider text not null,
+  provider_state text not null unique,
+  redirect_to text,
+  code_challenge text,
+  code_challenge_method text,
+  auth_code text unique,
+  user_id uuid references auth.users(id) on delete cascade,
+  created_at timestamptz default now(),
+  expires_at timestamptz not null
+);
+
 grant usage on schema auth to anon, authenticated, service_role;
 
 create or replace function auth.jwt() returns jsonb
