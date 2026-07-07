@@ -43,7 +43,7 @@ Until the harness exists, coverage numbers below are our own honest estimates.
 | Module | Coverage | Biggest gaps |
 | --- | --- | --- |
 | Database (PostgREST) | ~85% | aggregates in select, `.explain()`, `.csv()`, full spread embeds |
-| Auth (GoTrue) | ~80% | MFA, SSO, phone auth, anonymous→permanent upgrade |
+| Auth (GoTrue) | ~85% | SSO, phone auth, anonymous→permanent upgrade |
 | Storage | ~80% | image transforms, resumable (TUS) uploads |
 | Realtime | ~85% | per-row DELETE RLS (WALRUS), private channels, broadcast-from-db |
 | Edge Functions | ~70% | npm:/jsr: import resolution, secrets |
@@ -67,7 +67,7 @@ the "runs my real app" bar forward. Check items off as they land.
 ### Phase 1 — Auth completeness (the #1 real-app blocker)
 - [x] OAuth providers (Google, GitHub presets + generic) — `signInWithOAuth()` end to end
 - [x] PKCE flow (`exchangeCodeForSession`)
-- [ ] MFA / TOTP enroll + challenge + verify
+- [x] MFA / TOTP enroll + challenge + verify (aal2 elevation; `factors` on the user; QR + otpauth URI)
 - [x] Identity linking by email (auth.identities); [ ] anonymous → permanent upgrade
 - [ ] Local email inbox UI (like Inbucket/Mailpit) for magic-link/OTP testing
 - Target: Auth ~65% → ~90%

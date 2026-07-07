@@ -43,6 +43,10 @@ export interface JwtClaims {
   iss?: string
   aud?: string
   email?: string
+  /** authenticator assurance level: 'aal1' (single-factor) or 'aal2' (MFA-verified) */
+  aal?: string
+  /** authentication methods references, e.g. [{ method: 'password' | 'totp', timestamp }] */
+  amr?: { method: string; timestamp: number }[]
 }
 
 export async function signJwt(claims: JwtClaims, secret: string): Promise<string> {

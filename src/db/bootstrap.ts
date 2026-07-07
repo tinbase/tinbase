@@ -80,6 +80,25 @@ create table if not exists auth.flow_state (
   expires_at timestamptz not null
 );
 
+create table if not exists auth.mfa_factors (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  friendly_name text,
+  factor_type text not null default 'totp',
+  status text not null default 'unverified',
+  secret text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table if not exists auth.mfa_challenges (
+  id uuid primary key default gen_random_uuid(),
+  factor_id uuid not null,
+  verified_at timestamptz,
+  created_at timestamptz default now(),
+  expires_at timestamptz not null
+);
+
 create table if not exists storage.buckets (
   id text primary key,
   name text not null unique,
@@ -266,6 +285,25 @@ create table if not exists auth.flow_state (
   code_challenge_method text,
   auth_code text unique,
   user_id uuid references auth.users(id) on delete cascade,
+  created_at timestamptz default now(),
+  expires_at timestamptz not null
+);
+
+create table if not exists auth.mfa_factors (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  friendly_name text,
+  factor_type text not null default 'totp',
+  status text not null default 'unverified', -- unverified | verified
+  secret text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table if not exists auth.mfa_challenges (
+  id uuid primary key default gen_random_uuid(),
+  factor_id uuid not null references auth.mfa_factors(id) on delete cascade,
+  verified_at timestamptz,
   created_at timestamptz default now(),
   expires_at timestamptz not null
 );

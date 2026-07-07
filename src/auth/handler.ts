@@ -7,6 +7,8 @@ import { randomToken, signJwt, verifyJwt, type JwtClaims } from '../jwt.js'
 import type { Mailer, RequestContext } from '../types.js'
 import { OAuthService, type OAuthProviderConfig } from './oauth.js'
 import { hashPassword, verifyPassword } from './password.js'
+import { qrSvgDataUri } from './qr.js'
+import { generateTotpSecret, otpauthUri, verifyTotp } from './totp.js'
 
 export interface AuthConfig {
   jwtSecret: string
@@ -85,6 +87,13 @@ export class AuthHandler {
       if (['magiclink', 'resend'].includes(path) && method === 'POST') return await this.sendOtp(req)
       if (path === 'verify' && method === 'POST') return await this.verifyToken(req)
       if (path === 'verify' && method === 'GET') return await this.verifyLink(url)
+      if (path === 'factors' && method === 'POST') return await this.enrollFactor(req)
+      if (/^factors\/[^/]+\/challenge$/.test(path) && method === 'POST')
+        return await this.challengeFactor(req, path.split('/')[1])
+      if (/^factors\/[^/]+\/verify$/.test(path) && method === 'POST')
+        return await this.verifyFactor(req, path.split('/')[1])
+      if (/^factors\/[^/]+$/.test(path) && method === 'DELETE')
+        return await this.unenrollFactor(req, path.split('/')[1])
       if (path === 'authorize' && method === 'GET') return await this.oauth.authorize(url)
       if (path === 'callback' && (method === 'GET' || method === 'POST')) {
         return await this.oauth.callback(url, (userId) => this.sessionTokensFor(userId))
@@ -190,7 +199,7 @@ export class AuthHandler {
   private async getUser(req: Request): Promise<Response> {
     const user = await this.userFromBearer(req)
     if (!user) return authError(401, 'no_authorization', 'Invalid or expired token')
-    return json(200, this.userJson(user))
+    return json(200, this.userJson(user, await this.getUserFactors(user.id)))
   }
 
   private async updateUser(req: Request): Promise<Response> {
@@ -405,6 +414,137 @@ export class AuthHandler {
     return authError(404, 'not_found', `unknown admin endpoint`)
   }
 
+  // ── MFA (TOTP) ────────────────────────────────────────────────────────
+
+  private async enrollFactor(req: Request): Promise<Response> {
+    const user = await this.userFromBearer(req)
+    if (!user) return authError(401, 'no_authorization', 'This endpoint requires a Bearer token')
+    const body = (await req.json().catch(() => ({}))) as {
+      factor_type?: string
+      friendly_name?: string
+      issuer?: string
+    }
+    const factorType = body.factor_type ?? 'totp'
+    if (factorType !== 'totp') {
+      return authError(422, 'validation_failed', 'Only the totp factor type is supported')
+    }
+    const friendlyName = body.friendly_name ?? null
+    if (friendlyName) {
+      const dup = await this.db.query(
+        `select 1 from auth.mfa_factors where user_id = $1 and friendly_name = $2`,
+        [user.id, friendlyName]
+      )
+      if (dup.rows.length > 0) {
+        return authError(422, 'mfa_factor_name_conflict', 'A factor with this friendly name already exists')
+      }
+    }
+    const secret = generateTotpSecret()
+    let issuer = body.issuer
+    if (!issuer) {
+      try {
+        issuer = new URL(this.config.siteUrl).host || 'tinbase'
+      } catch {
+        issuer = 'tinbase'
+      }
+    }
+    const uri = otpauthUri({ secret, account: user.email || user.id, issuer })
+    const ins = await this.db.query(
+      `insert into auth.mfa_factors (user_id, friendly_name, factor_type, status, secret)
+       values ($1, $2, 'totp', 'unverified', $3) returning id`,
+      [user.id, friendlyName, secret]
+    )
+    const id = (ins.rows[0] as { id: string }).id
+    return json(200, {
+      id,
+      type: 'totp',
+      friendly_name: friendlyName,
+      status: 'unverified',
+      totp: { qr_code: qrSvgDataUri(uri), secret, uri },
+    })
+  }
+
+  private async challengeFactor(req: Request, factorId: string): Promise<Response> {
+    const user = await this.userFromBearer(req)
+    if (!user) return authError(401, 'no_authorization', 'This endpoint requires a Bearer token')
+    const fr = await this.db.query(`select id from auth.mfa_factors where id = $1 and user_id = $2`, [factorId, user.id])
+    if (fr.rows.length === 0) return authError(404, 'mfa_factor_not_found', 'MFA factor not found')
+    const expiresAt = new Date(Date.now() + 300_000).toISOString()
+    const ins = await this.db.query(
+      `insert into auth.mfa_challenges (factor_id, expires_at) values ($1, $2) returning id, expires_at`,
+      [factorId, expiresAt]
+    )
+    const c = ins.rows[0] as { id: string; expires_at: string | Date }
+    return json(200, {
+      id: c.id,
+      type: 'totp',
+      expires_at: Math.floor(new Date(c.expires_at).getTime() / 1000),
+    })
+  }
+
+  private async verifyFactor(req: Request, factorId: string): Promise<Response> {
+    const user = await this.userFromBearer(req)
+    if (!user) return authError(401, 'no_authorization', 'This endpoint requires a Bearer token')
+    const body = (await req.json().catch(() => ({}))) as { challenge_id?: string; code?: string }
+    const fr = await this.db.query(
+      `select id, secret, status from auth.mfa_factors where id = $1 and user_id = $2`,
+      [factorId, user.id]
+    )
+    const factor = fr.rows[0] as { id: string; secret: string; status: string } | undefined
+    if (!factor) return authError(404, 'mfa_factor_not_found', 'MFA factor not found')
+    const cr = await this.db.query(
+      `select id, expires_at from auth.mfa_challenges where id = $1 and factor_id = $2`,
+      [body.challenge_id ?? '', factorId]
+    )
+    const challenge = cr.rows[0] as { id: string; expires_at: string | Date } | undefined
+    if (!challenge) return authError(404, 'mfa_challenge_not_found', 'MFA challenge not found')
+    if (new Date(challenge.expires_at).getTime() < Date.now()) {
+      return authError(422, 'mfa_challenge_expired', 'MFA challenge has expired, verify against another one')
+    }
+    if (!(await verifyTotp(factor.secret, body.code ?? ''))) {
+      return authError(422, 'mfa_verification_failed', 'Invalid TOTP code entered')
+    }
+    await this.db.query(`update auth.mfa_challenges set verified_at = now() where id = $1`, [challenge.id])
+    if (factor.status !== 'verified') {
+      await this.db.query(`update auth.mfa_factors set status = 'verified', updated_at = now() where id = $1`, [factorId])
+    }
+    // elevate the session to aal2 for the same user
+    const session = await this.sessionFor(user, undefined, {
+      aal: 'aal2',
+      amr: [
+        { method: 'password', timestamp: Math.floor(Date.now() / 1000) },
+        { method: 'totp', timestamp: Math.floor(Date.now() / 1000) },
+      ],
+    })
+    return json(200, session)
+  }
+
+  private async unenrollFactor(req: Request, factorId: string): Promise<Response> {
+    const user = await this.userFromBearer(req)
+    if (!user) return authError(401, 'no_authorization', 'This endpoint requires a Bearer token')
+    const del = await this.db.query(
+      `delete from auth.mfa_factors where id = $1 and user_id = $2 returning id`,
+      [factorId, user.id]
+    )
+    if (del.rows.length === 0) return authError(404, 'mfa_factor_not_found', 'MFA factor not found')
+    return json(200, { id: factorId })
+  }
+
+  private async getUserFactors(userId: string): Promise<Record<string, unknown>[]> {
+    const res = await this.db.query(
+      `select id, friendly_name, factor_type, status, created_at, updated_at
+       from auth.mfa_factors where user_id = $1 order by created_at`,
+      [userId]
+    )
+    return (res.rows as Record<string, unknown>[]).map((f) => ({
+      id: f.id,
+      friendly_name: f.friendly_name ?? null,
+      factor_type: f.factor_type,
+      status: f.status,
+      created_at: iso(f.created_at as Date | string | null),
+      updated_at: iso(f.updated_at as Date | string | null),
+    }))
+  }
+
   // ── helpers ───────────────────────────────────────────────────────────
 
   private async userFromBearer(req: Request): Promise<UserRow | null> {
@@ -416,7 +556,7 @@ export class AuthHandler {
     return (res.rows[0] as UserRow) ?? null
   }
 
-  userJson(u: UserRow): Record<string, unknown> {
+  userJson(u: UserRow, factors: Record<string, unknown>[] = []): Record<string, unknown> {
     return {
       id: u.id,
       aud: u.aud ?? 'authenticated',
@@ -429,6 +569,7 @@ export class AuthHandler {
       app_metadata: u.raw_app_meta_data ?? {},
       user_metadata: u.raw_user_meta_data ?? {},
       identities: [],
+      factors,
       created_at: iso(u.created_at),
       updated_at: iso(u.updated_at),
       is_anonymous: u.is_anonymous ?? false,
@@ -446,7 +587,11 @@ export class AuthHandler {
     return { access_token: session.access_token, refresh_token: session.refresh_token, expires_in: session.expires_in }
   }
 
-  private async sessionFor(user: UserRow, parentToken?: string): Promise<Record<string, unknown>> {
+  private async sessionFor(
+    user: UserRow,
+    parentToken?: string,
+    opts?: { aal?: string; amr?: { method: string; timestamp: number }[] }
+  ): Promise<Record<string, unknown>> {
     const now = Math.floor(Date.now() / 1000)
     const expiresAt = now + this.config.jwtExpiry
     const sessionId = crypto.randomUUID()
@@ -463,6 +608,8 @@ export class AuthHandler {
       role: user.role ?? 'authenticated',
       is_anonymous: user.is_anonymous ?? false,
       session_id: sessionId,
+      aal: opts?.aal ?? 'aal1',
+      amr: opts?.amr ?? [{ method: 'password', timestamp: now }],
     }
     const accessToken = await signJwt(claims, this.config.jwtSecret)
     const refreshToken = randomToken(24)
@@ -476,7 +623,7 @@ export class AuthHandler {
       expires_in: this.config.jwtExpiry,
       expires_at: expiresAt,
       refresh_token: refreshToken,
-      user: this.userJson(user),
+      user: this.userJson(user, await this.getUserFactors(user.id)),
     }
   }
 }
