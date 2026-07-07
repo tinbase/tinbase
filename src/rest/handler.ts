@@ -63,7 +63,7 @@ export class RestHandler {
     const wantsObject = (req.headers.get('accept') ?? '').includes(OBJECT_MEDIA)
     const q = parseQuery(url.searchParams)
     const info = await this.db.getSchemaInfo(schema)
-    const builder = new QueryBuilder(schema, info, q)
+    const builder = new QueryBuilder(schema, info, q, { aliasMutations: !this.db.engine.minimalBootstrap })
 
     switch (method) {
       case 'GET':
@@ -283,7 +283,7 @@ export class RestHandler {
     }
 
     const info = await this.db.getSchemaInfo(schema)
-    const builder = new QueryBuilder(schema, info, q)
+    const builder = new QueryBuilder(schema, info, q, { aliasMutations: !this.db.engine.minimalBootstrap })
     const conds = q.conditions.map((c) => builder.renderCond(c, alias))
     const where = conds.length > 0 ? ` where ${conds.join(' and ')}` : ''
     const order = builder.renderOrder([], alias)

@@ -15,7 +15,7 @@ npx tinbase start
 
 - **No Docker, no external services.** One runtime dependency: `@electric-sql/pglite`.
 - **Real Postgres semantics.** RLS policies, `auth.uid()`, triggers, FKs - it is Postgres.
-- **Two engines, one API.** Default is PGlite (WASM Postgres - portable, browser-ready). `--engine native` runs an embedded native Postgres instead: ~59 MB of RAM at boot, PocketBase-class footprint, zero semantic differences.
+- **Three engines, one API.** Default is PGlite (WASM Postgres - portable, browser-ready). `--engine native` runs an embedded native Postgres instead: ~59 MB of RAM at boot, PocketBase-class footprint, zero semantic differences. `--engine pgmem` is an ultralight pure-JS in-memory subset for local dev / previews - see [Engines](#engines).
 - **Supabase CLI migration conventions.** Reads `supabase/migrations/*.sql` and `supabase/seed.sql`; tracks them in `supabase_migrations.schema_migrations`. Your migration files stay portable to hosted Supabase.
 - **Browser-ready core.** Every service is a pure `(Request) => Response` fetch handler. In Node it's served over HTTP; in the browser you can hand it to supabase-js as a custom `fetch` and run the whole backend in-process (PGlite already runs in the browser via IndexedDB/OPFS).
 
@@ -68,10 +68,12 @@ tinbase db diff    # DDL for schema changes not yet in migrations (-f <name> to 
 
 ### Engines
 
-- **wasm** (default): PGlite. Zero setup, runs anywhere Node runs - and in the browser. Its WASM heap uses ~575-650 MB RAM.
+- **wasm** (default): PGlite. Zero setup, runs anywhere Node runs - and in the browser. Its WASM heap sits around ~575-650 MB and does not shrink under load.
 - **native**: embedded native Postgres 17. First run downloads platform binaries (~12 MB, from [theseus-rs/postgresql-binaries](https://github.com/theseus-rs/postgresql-binaries), cached in `~/.cache/tinbase`), then `initdb` with memory-lean settings. ~59 MB RAM at boot. Listens only on a private unix socket (0700 dir, trust auth) - never TCP. macOS/Linux on x64/arm64; on Windows use wasm.
 
-Both engines run the identical bootstrap, migrations, RLS, and realtime CDC - the test suite passes on both (`TINBASE_TEST_ENGINE=native npm test`).
+- **pgmem** (`--engine pgmem`): an ultralight, pure-JS, in-memory subset via [pg-mem](https://github.com/oguimbal/pg-mem) — **~3.6 MB install, no WASM**, so it's the lightest option for the browser (RapidNative local-dev / previews). Runs the REST CRUD surface + email/password auth; RLS, realtime, functions, pgmq, and cron are **not** available (RLS DDL in migrations is skipped, not fatal). Local-dev / preview only — never production.
+
+The wasm and native engines run the identical bootstrap, migrations, RLS, and realtime CDC - the test suite passes on both (`TINBASE_TEST_ENGINE=native npm test`).
 
 ### Single-binary build
 
@@ -172,20 +174,21 @@ Emits Tables (Row/Insert/Update/Relationships), Views, Functions, and Enums.
 
 Measured on an Apple Silicon Mac (48 GB), macOS 15. Same workload for all three: boot with one migrated table, then 1,000 single-row inserts followed by 1,000 filtered list queries. Memory is physical footprint (`vmmap`) for native processes and the sum of `docker stats` for containers. Reproduce with [`bench/footprint.ts`](bench/footprint.ts); raw numbers in [`bench/results.json`](bench/results.json).
 
-| | tinbase (single binary) | tinbase (native, Node) | tinbase (wasm) | PocketBase v0.39.5 | Supabase local (CLI 2.40) |
-| --- | --- | --- | --- | --- | --- |
-| Database | real Postgres 17 + RLS | real Postgres 17 + RLS | real Postgres (PGlite) + RLS | SQLite | Postgres 17 |
-| Runtime memory at boot | 49 MB | 59 MB | ~610 MB¹ | 15 MB | 1,441 MB |
-| Runtime memory after workload | 66 MB | 100 MB | ~640 MB¹ | 24 MB | 1,626 MB |
-| Data on disk (1k rows) | 39 MB | 39 MB | 40 MB | 7 MB | 70 MB |
-| Install size | 92 MB (no runtime needed) | 36 MB² | 27 MB² | 30 MB | 2,291 MB³ |
-| Processes | 2 (tinbase + postgres) | 2 (node + postgres) | 1 | 1 | 12 containers + Docker |
-| 1,000 inserts | 0.4 s | 0.5 s | 0.8 s | 0.3 s | 1.1 s |
-| 1,000 filtered reads | 0.3 s | 0.4 s | 0.9 s | 0.3 s | 1.0 s |
+| | tinbase (single binary) | tinbase (native) | tinbase (pg-mem) | tinbase (wasm) | PocketBase v0.39.5 | Supabase local |
+| --- | --- | --- | --- | --- | --- | --- |
+| Database | real Postgres 17 + RLS | real Postgres 17 + RLS | in-memory subset¹ | real Postgres (PGlite) + RLS | SQLite | Postgres 17 |
+| Runtime memory at boot | 49 MB | 59 MB | 71 MB | ~610 MB² | 15 MB | 1,441 MB |
+| Runtime memory after workload | 66 MB | 100 MB | 185 MB | ~640 MB² | 24 MB | 1,626 MB |
+| Data on disk (1k rows) | 39 MB | 39 MB | 0 (in-memory) | 40 MB | 7 MB | 70 MB |
+| Install size | 92 MB (no runtime) | 36 MB³ | 3.6 MB³ | 27 MB³ | 30 MB | 2,291 MB⁴ |
+| Processes | 2 | 2 | 1 | 1 | 1 | 12 containers + Docker |
+| 1,000 inserts | 0.4 s | 0.5 s | 0.8 s | 0.8 s | 0.3 s | 1.1 s |
+| 1,000 filtered reads | 0.3 s | 0.4 s | 0.8 s | 0.9 s | 0.3 s | 1.0 s |
 
-¹ The wasm figure is essentially PGlite's WASM heap, which measures anywhere in ~575–650 MB depending on GC timing at the sample — treat it as a band, not a point. It does not shrink under load. The API layers add only single-digit MB. Use wasm where portability matters (browser, one-dependency install); deploy the native engine or single binary on servers.
-² Native: unpacked Postgres 17 binaries + `dist`. Wasm: `dist` + `@electric-sql/pglite`. Both exclude the Node runtime you already have.
-³ Sum of the Docker image sizes the default local stack runs, excluding Docker Desktop itself.
+¹ **pg-mem** is a pure-JS in-memory subset (local dev / preview) — no RLS, realtime, functions, pgmq, or cron, but a **3.6 MB install** and pure JS (no WASM), the lightest option for the browser. See [Engines](#engines).
+² The wasm figure is essentially PGlite's WASM heap, which measures anywhere in ~575–650 MB depending on GC timing — treat it as a band, not a point. It does not shrink under load.
+³ Native: Postgres 17 binaries + `dist`. pg-mem: `dist` + `pg-mem`. Wasm: `dist` + `@electric-sql/pglite`. All exclude the Node runtime you already have.
+⁴ Sum of the Docker image sizes the default local stack runs, excluding Docker Desktop itself.
 
 **How to read this honestly:**
 
@@ -220,7 +223,7 @@ Beyond the client SDK, the local platform features real projects depend on also 
 
 ## Tests
 
-53 integration tests + 4 realtime e2e tests run the real `@supabase/supabase-js` against the backend (REST via in-process fetch, realtime over actual WebSockets):
+120 tests run the real `@supabase/supabase-js` against the backend (REST via in-process fetch, realtime over actual WebSockets), and pass on both the wasm and native engines:
 
 ```bash
 npm test

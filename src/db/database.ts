@@ -1,4 +1,4 @@
-import { BOOTSTRAP_SQL } from './bootstrap.js'
+import { BOOTSTRAP_SQL, MINIMAL_BOOTSTRAP_SQL } from './bootstrap.js'
 import { PGMQ_SQL, CRON_SQL } from './emulated.js'
 import { createPgliteEngine } from './pglite-engine.js'
 import type { DbEngine, EngineResults, EngineTx } from './engine.js'
@@ -75,11 +75,16 @@ export class Database {
       dataDirOrEngine && typeof dataDirOrEngine === 'object'
         ? dataDirOrEngine
         : await createPgliteEngine(dataDirOrEngine)
-    await engine.exec(BOOTSTRAP_SQL)
-    // emulated extensions (pgmq queues, cron) — pure SQL, so pgmq.*/cron.* work
-    // with no C extension on either engine
-    await engine.exec(PGMQ_SQL)
-    await engine.exec(CRON_SQL)
+    if (engine.minimalBootstrap) {
+      // subset engine (pg-mem): schemas + tables only, no plpgsql/RLS/extensions
+      await engine.exec(MINIMAL_BOOTSTRAP_SQL)
+    } else {
+      await engine.exec(BOOTSTRAP_SQL)
+      // emulated extensions (pgmq queues, cron) — pure SQL, so pgmq.*/cron.* work
+      // with no C extension on either engine
+      await engine.exec(PGMQ_SQL)
+      await engine.exec(CRON_SQL)
+    }
     return new Database(engine)
   }
 

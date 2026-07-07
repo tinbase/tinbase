@@ -53,5 +53,16 @@
     "readSecs": 0.322,
     "notes": "single compiled executable (bun) + embedded postgres tree; install = binary + postgres binaries, NO runtime prerequisite",
     "measuredAt": "2026-07-07T12:06:37.277Z"
+  },
+  {
+    "target": "tinbase-pgmem",
+    "bootRssMb": 71,
+    "workloadRssMb": 185.2,
+    "dataDiskMb": 0,
+    "installDiskMb": 3.6,
+    "insertSecs": 0.834,
+    "readSecs": 0.806,
+    "notes": "single node process; pg-mem in-memory subset (no RLS/realtime); install = dist + pg-mem",
+    "measuredAt": "2026-07-07T13:30:30.685Z"
   }
 ]

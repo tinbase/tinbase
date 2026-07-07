@@ -16,6 +16,8 @@ export interface EngineTx {
 }
 
 export interface DbEngine {
+  /** true for subset engines (pg-mem) that can't run the full plpgsql/RLS bootstrap */
+  minimalBootstrap?: boolean
   query<T = any>(sql: string, params?: unknown[]): Promise<EngineResults<T>>
   /** Run multiple SQL statements (no params). */
   exec(sql: string): Promise<void>

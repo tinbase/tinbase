@@ -147,14 +147,16 @@ async function supabaseJsWorkload(url: string, anonKey: string): Promise<{ inser
 
 // ── target: tinbase ────────────────────────────────────────────────────────
 
-async function benchTinbase(): Promise<void> {
-  const dir = join(import.meta.dirname, '.tmp-tinbase')
+async function benchTinbase(engine: 'wasm' | 'pgmem' = 'wasm'): Promise<void> {
+  const dir = join(import.meta.dirname, engine === 'pgmem' ? '.tmp-pgmem' : '.tmp-tinbase')
   rmSync(dir, { recursive: true, force: true })
   mkdirSync(join(dir, 'supabase', 'migrations'), { recursive: true })
   writeFileSync(join(dir, 'supabase', 'migrations', '20240101000000_bench.sql'), BENCH_TABLE_SQL)
 
-  const port = 54441
-  const proc = spawn('node', ['dist/cli.js', 'start', '--dir', dir, '--port', String(port)], {
+  const port = engine === 'pgmem' ? 54444 : 54441
+  const args = ['dist/cli.js', 'start', '--dir', dir, '--port', String(port)]
+  if (engine === 'pgmem') args.push('--engine', 'pgmem')
+  const proc = spawn('node', args, {
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   let banner = ''
@@ -171,19 +173,22 @@ async function benchTinbase(): Promise<void> {
     const { insertSecs, readSecs } = await supabaseJsWorkload(`http://127.0.0.1:${port}`, anonKey)
     await sleep(1000)
     const workloadRssMb = rssTreeMb(proc.pid!)
-    const dataDiskMb = duMb(join(dir, '.tinbase'))
-    // runtime install = published package (dist) + its single runtime dep (pglite)
-    const installDiskMb = duMb('node_modules/@electric-sql/pglite') + duMb('dist')
+    const dataDiskMb = engine === 'pgmem' ? 0 : duMb(join(dir, '.tinbase'))
+    const installDiskMb =
+      engine === 'pgmem' ? duMb('node_modules/pg-mem') + duMb('dist') : duMb('node_modules/@electric-sql/pglite') + duMb('dist')
 
     saveResult({
-      target: 'tinbase',
+      target: engine === 'pgmem' ? 'tinbase-pgmem' : 'tinbase',
       bootRssMb,
       workloadRssMb,
       dataDiskMb,
       installDiskMb,
       insertSecs,
       readSecs,
-      notes: `single node process; install = dist + @electric-sql/pglite (excludes Node runtime itself)`,
+      notes:
+        engine === 'pgmem'
+          ? 'single node process; pg-mem in-memory subset (no RLS/realtime); install = dist + pg-mem'
+          : `single node process; install = dist + @electric-sql/pglite (excludes Node runtime itself)`,
       measuredAt: new Date().toISOString(),
     })
   } finally {
@@ -432,6 +437,7 @@ async function benchSupabase(): Promise<void> {
 
 const target = process.argv[2]
 if (target === 'tinbase') await benchTinbase()
+else if (target === 'tinbase-pgmem') await benchTinbase('pgmem')
 else if (target === 'tinbase-native') await benchTinbaseNative()
 else if (target === 'tinbase-binary') await benchTinbaseNative(join(import.meta.dirname, '..', 'dist-bin', 'tinbase'))
 else if (target === 'pocketbase') await benchPocketbase()
