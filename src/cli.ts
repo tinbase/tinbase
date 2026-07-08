@@ -23,6 +23,11 @@ import { serveBun } from './node/bun-server.js'
 const IS_BUN = typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined'
 // single-file builds ship without the WASM engine; native is the default there
 const IS_BINARY = process.env.TINBASE_SINGLE_BINARY === '1'
+// Native (embedded Postgres) is the default where it's supported — macOS/Linux
+// on x64/arm64. Elsewhere (e.g. Windows) fall back to the WASM (PGlite) engine.
+const NATIVE_SUPPORTED =
+  (process.platform === 'darwin' || process.platform === 'linux') &&
+  (process.arch === 'arm64' || process.arch === 'x64')
 import { signJwt } from './jwt.js'
 import { DEFAULT_JWT_SECRET } from './types.js'
 
@@ -55,7 +60,7 @@ function parseArgs(argv: string[]): CliOptions {
     storageDir: '',
     jwtSecret: process.env.TINBASE_JWT_SECRET ?? DEFAULT_JWT_SECRET,
     memory: false,
-    engine: (process.env.TINBASE_ENGINE as 'wasm' | 'native' | 'pgmem') ?? (IS_BINARY ? 'native' : 'wasm'),
+    engine: (process.env.TINBASE_ENGINE as 'wasm' | 'native' | 'pgmem') ?? (IS_BINARY || NATIVE_SUPPORTED ? 'native' : 'wasm'),
   }
   for (let i = 0; i < args.length; i++) {
     const a = args[i]
@@ -126,9 +131,10 @@ Options:
       --storage-dir <p> storage files directory (default <dir>/.tinbase/storage)
       --jwt-secret <s>  JWT secret (or TINBASE_JWT_SECRET env var)
       --memory          in-memory database (no persistence, wasm engine only)
-      --engine <e>      wasm (PGlite, default), native (embedded Postgres),
-                        or pgmem (ultralight in-memory subset — no RLS, cron,
-                        or pgmq; local dev / preview only)
+      --engine <e>      native (embedded Postgres, default on macOS/Linux),
+                        wasm (PGlite — default on Windows, browser-ready), or
+                        pgmem (ultralight in-memory subset — no RLS, cron, or
+                        pgmq; local dev / preview only)
 `)
 }
 

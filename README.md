@@ -15,7 +15,7 @@ npx tinbase start
 
 - **No Docker, no external services.** One runtime dependency: `@electric-sql/pglite`.
 - **Real Postgres semantics.** RLS policies, `auth.uid()`, triggers, FKs - it is Postgres.
-- **Three engines, one API.** Default is PGlite (WASM Postgres - portable, browser-ready). `--engine native` runs an embedded native Postgres instead: ~59 MB of RAM at boot, PocketBase-class footprint, zero semantic differences. `--engine pgmem` is an ultralight pure-JS in-memory subset for local dev / previews - see [Engines](#engines).
+- **Three engines, one API.** Default is embedded native Postgres 17 (macOS/Linux): ~59 MB of RAM at boot, PocketBase-class footprint, zero semantic differences; the first run downloads ~12 MB of binaries. `--engine wasm` runs PGlite (Postgres compiled to WASM) instead - portable, browser-ready, and the default on Windows. `--engine pgmem` is an ultralight pure-JS in-memory subset for local dev / previews - see [Engines](#engines).
 - **Supabase CLI migration conventions.** Reads `supabase/migrations/*.sql` and `supabase/seed.sql`; tracks them in `supabase_migrations.schema_migrations`. Your migration files stay portable to hosted Supabase.
 - **Browser-ready core.** Every service is a pure `(Request) => Response` fetch handler. In Node it's served over HTTP; in the browser you can hand it to supabase-js as a custom `fetch` and run the whole backend in-process (PGlite already runs in the browser via IndexedDB/OPFS).
 
@@ -63,13 +63,13 @@ tinbase db diff    # DDL for schema changes not yet in migrations (-f <name> to 
       --data-dir <path> PGlite data dir (default <dir>/.tinbase/db)
       --jwt-secret <s>  JWT secret (or TINBASE_JWT_SECRET)
       --memory          in-memory database, no persistence (wasm engine)
-      --engine <e>      wasm (default) or native
+      --engine <e>      native (default), wasm, or pgmem
 ```
 
 ### Engines
 
-- **wasm** (default): PGlite. Zero setup, runs anywhere Node runs - and in the browser. Its WASM heap sits around ~575-650 MB and does not shrink under load.
-- **native**: embedded native Postgres 17. First run downloads platform binaries (~12 MB, from [theseus-rs/postgresql-binaries](https://github.com/theseus-rs/postgresql-binaries), cached in `~/.cache/tinbase`), then `initdb` with memory-lean settings. ~59 MB RAM at boot. Listens only on a private unix socket (0700 dir, trust auth) - never TCP. macOS/Linux on x64/arm64; on Windows use wasm.
+- **native** (default on macOS/Linux): embedded native Postgres 17. First run downloads platform binaries (~12 MB, from [theseus-rs/postgresql-binaries](https://github.com/theseus-rs/postgresql-binaries), cached in `~/.cache/tinbase`), then `initdb` with memory-lean settings. ~59 MB RAM at boot. Listens only on a private unix socket (0700 dir, trust auth) - never TCP. macOS/Linux on x64/arm64.
+- **wasm** (default on Windows): PGlite. Zero setup, runs anywhere Node runs - and in the browser. Its WASM heap sits around ~575-650 MB and does not shrink under load.
 
 - **pgmem** (`--engine pgmem`): an ultralight, pure-JS, in-memory subset via [pg-mem](https://github.com/oguimbal/pg-mem) — **~3.6 MB install, no WASM**, so it's the lightest option for the browser (RapidNative local-dev / previews). Runs the REST CRUD surface, email/password auth, **edge functions, realtime (broadcast/presence + `postgres_changes`), and database webhooks**. pg-mem has no triggers or LISTEN/NOTIFY, so realtime/webhook change events are synthesized in JS by the REST layer (every write goes through it in-process). What's *not* here: **RLS** (so realtime/webhook events are delivered unfiltered, not per-subscriber), **cron**, and **pgmq** - RLS DDL in migrations is skipped, not fatal. Local-dev / preview only — never production.
 
@@ -237,5 +237,5 @@ tinbase aims to be a local, Docker-free replacement for `supabase start` where *
 
 tinbase was built for [lifo](https://lifo.sh) - a project that maps Linux APIs into the browser - to let **Expo apps run fully in the browser with full-stack capability** (database, auth, storage, realtime, no server). It is part of [RapidNative](https://rapidnative.com). That origin drives the architecture:
 
-1. Every service is a pure fetch handler and the default engine is Postgres compiled to WASM, so the whole backend can run **in-process inside a browser tab**.
+1. Every service is a pure fetch handler, and the `wasm` engine is Postgres compiled to WASM (PGlite), so with it the whole backend can run **in-process inside a browser tab**.
 2. The same design makes a lighter Supabase for local dev and self-contained apps - `npx tinbase start` instead of Docker Compose.

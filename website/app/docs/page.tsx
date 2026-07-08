@@ -136,20 +136,20 @@ tinbase db diff    # DDL for out-of-migration schema changes
       --data-dir <path> data dir (default <dir>/.tinbase/db)
       --jwt-secret <s>  JWT secret (or TINBASE_JWT_SECRET)
       --memory          in-memory database (wasm engine)
-      --engine <e>      wasm (default), native, or pgmem`}</Pre>
+      --engine <e>      native (default), wasm, or pgmem`}</Pre>
 
           <H2 id="engines">Engines</H2>
           <P>
-            <strong className="text-zinc-200">wasm</strong> (default) runs PGlite — Postgres compiled
-            to WebAssembly. Zero setup, runs anywhere Node runs including the browser. Its WASM heap
-            sits around ~575–650 MB and does not shrink under load.
-          </P>
-          <P>
-            <strong className="text-zinc-200">native</strong> runs embedded native Postgres 17. The
-            first run downloads platform binaries (~12 MB, cached in{' '}
+            <strong className="text-zinc-200">native</strong> (default on macOS/Linux) runs embedded
+            native Postgres 17. The first run downloads platform binaries (~12 MB, cached in{' '}
             <code className={IC}>~/.cache/tinbase</code>), then <code className={IC}>initdb</code>{' '}
             with memory-lean settings. ~59 MB of RAM at boot. It listens only on a private unix
             socket (0700 directory, trust auth) — never TCP. macOS and Linux on x64/arm64.
+          </P>
+          <P>
+            <strong className="text-zinc-200">wasm</strong> (the default on Windows) runs PGlite —
+            Postgres compiled to WebAssembly. Zero setup, runs anywhere Node runs including the
+            browser. Its WASM heap sits around ~575–650 MB and does not shrink under load.
           </P>
           <P>
             <strong className="text-zinc-200">pgmem</strong> is an ultralight, pure-JS, in-memory

@@ -103,8 +103,8 @@ const GROUPS: Group[] = [
     area: 'Engines & extensions',
     coverage: '',
     rows: [
-      ['PGlite (WASM Postgres) — default, browser-ready', 'yes', ''],
-      ['Native embedded Postgres 17', 'yes', ''],
+      ['Native embedded Postgres 17 — default (macOS/Linux)', 'yes', ''],
+      ['PGlite (WASM Postgres) — browser-ready, default on Windows', 'yes', ''],
       ['pg-mem (pure-JS, in-memory subset)', 'yes', 'no RLS / cron / pgmq'],
       ['Single-file binary', 'yes', ''],
       ['Common extensions (uuid-ossp, pgcrypto, citext, pg_trgm, …)', 'yes', 'where the engine bundles them'],
