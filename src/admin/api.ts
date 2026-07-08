@@ -6,6 +6,7 @@
  */
 import { quoteIdent } from '../db/database.js'
 import type { Database } from '../db/database.js'
+import type { LogBuffer } from '../log-buffer.js'
 import type { RequestContext } from '../types.js'
 
 function json(status: number, body: unknown): Response {
@@ -16,7 +17,10 @@ function json(status: number, body: unknown): Response {
 }
 
 export class AdminApi {
-  constructor(private db: Database) {}
+  constructor(
+    private db: Database,
+    private logs?: LogBuffer
+  ) {}
 
   async handle(req: Request, ctx: RequestContext, url: URL): Promise<Response> {
     if (ctx.role !== 'service_role') {
@@ -36,6 +40,11 @@ export class AdminApi {
       if (path === 'policies' && method === 'DELETE') return await this.dropPolicy(url)
       if (path === 'functions' && method === 'GET') return await this.listFunctions(url)
       if (path === 'triggers' && method === 'GET') return await this.listTriggers(url)
+      if (path === 'logs' && method === 'GET') return json(200, { logs: this.logs?.list() ?? [] })
+      if (path === 'logs' && method === 'DELETE') {
+        this.logs?.clear()
+        return json(200, { ok: true })
+      }
       return json(404, { error: `unknown admin endpoint: ${path}` })
     } catch (e) {
       return json(500, { error: e instanceof Error ? e.message : String(e) })

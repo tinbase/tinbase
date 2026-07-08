@@ -47,7 +47,7 @@ Until the harness exists, coverage numbers below are our own honest estimates.
 | Storage | ~80% | image transforms, resumable (TUS) uploads |
 | Realtime | ~90% | per-row DELETE RLS (WALRUS) |
 | Edge Functions | ~70% | npm:/jsr: import resolution, secrets |
-| Studio | ~70% | logs pane, table/column designer UI |
+| Studio | ~80% | table/column designer UI |
 | Type generation | ~85% | composite-type args, multi-schema output |
 | Extensions (pgvector, pg_cron, pg_net, pgmq) | partial/0% | vector search, cron, webhooks, queues |
 
@@ -81,7 +81,7 @@ the "runs my real app" bar forward. Check items off as they land.
 ### Phase 3 — Developer experience
 - [x] `tinbase gen types typescript` from the live schema
 - [x] `db reset` (wipe + re-run migrations/seed); [x] `db diff` (schema differ); [x] `db pull` (delta → migration, marked applied); [x] `inspect` (per-table rows + size)
-- [x] Studio: RLS policy editor, functions/triggers browser; [ ] logs pane
+- [x] Studio: RLS policy editor, functions/triggers browser; [x] logs pane (server log buffer + /admin/v1/logs)
 - Target: match the daily-driver DX of the Supabase CLI + Studio
 
 ### Phase 4 — Extensions & automation
