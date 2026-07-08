@@ -1,8 +1,12 @@
 @import "tailwindcss";
 
+/* tinbase is dark-only by design — it does not follow the system
+   color-scheme preference. Keep these tokens dark unconditionally and pin
+   color-scheme so native UI (scrollbars, form controls) stays dark too. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #09090b; /* zinc-950 — matches <body> bg + themeColor */
+  --foreground: #ededed;
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -10,13 +14,6 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
