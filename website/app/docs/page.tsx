@@ -298,7 +298,7 @@ const supabase = createClient('http://localhost', backend.anonKey, {
           <H2 id="feature-completeness">Feature completeness</H2>
           <P>
             Where tinbase stands against the Supabase surface, mapped from the{' '}
-            <a className="text-emerald-400 hover:text-emerald-300" href="https://github.com/sanketsahu/tinbase/blob/main/ROADMAP.md">
+            <a className="text-emerald-400 hover:text-emerald-300" href="https://github.com/tinbase/tinbase/blob/main/ROADMAP.md">
               roadmap
             </a>
 . <span className="text-emerald-400">✓ Yes</span>{' '}
@@ -406,11 +406,11 @@ const supabase = createClient('http://localhost', backend.anonKey, {
           </P>
           <P>
             Methodology, raw numbers, and a reproducible script live in the repo:{' '}
-            <a className="text-emerald-400 hover:text-emerald-300" href="https://github.com/sanketsahu/tinbase/blob/main/bench/footprint.ts">
+            <a className="text-emerald-400 hover:text-emerald-300" href="https://github.com/tinbase/tinbase/blob/main/bench/footprint.ts">
               bench/footprint.ts
             </a>{' '}
             and{' '}
-            <a className="text-emerald-400 hover:text-emerald-300" href="https://github.com/sanketsahu/tinbase/blob/main/bench/results.json">
+            <a className="text-emerald-400 hover:text-emerald-300" href="https://github.com/tinbase/tinbase/blob/main/bench/results.json">
               bench/results.json
             </a>
             .

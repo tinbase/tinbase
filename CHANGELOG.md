@@ -76,7 +76,7 @@ Earlier tagged previews: the core Supabase-compatible surface — REST (PostgRES
 grammar), Auth (GoTrue), Storage, Realtime, RLS, migrations, and the single-file
 binary — on the PGlite (wasm) and native Postgres engines.
 
-[0.6.1]: https://github.com/sanketsahu/tinbase/releases/tag/v0.6.1
-[0.6.0]: https://github.com/sanketsahu/tinbase/releases/tag/v0.6.0
-[0.2.0]: https://github.com/sanketsahu/tinbase/releases/tag/v0.2.0
-[0.1.0]: https://github.com/sanketsahu/tinbase/releases/tag/v0.1.0
+[0.6.1]: https://github.com/tinbase/tinbase/releases/tag/v0.6.1
+[0.6.0]: https://github.com/tinbase/tinbase/releases/tag/v0.6.0
+[0.2.0]: https://github.com/tinbase/tinbase/releases/tag/v0.2.0
+[0.1.0]: https://github.com/tinbase/tinbase/releases/tag/v0.1.0

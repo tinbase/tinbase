@@ -43,7 +43,7 @@ export function SiteNav() {
             Benchmarks
           </a>
           <a
-            href="https://github.com/sanketsahu/tinbase"
+            href="https://github.com/tinbase/tinbase"
             className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-zinc-300 hover:bg-zinc-800/60 hover:text-white"
           >
             <GitHubIcon /> GitHub

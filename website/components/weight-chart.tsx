@@ -183,7 +183,7 @@ export function WeightChart() {
         Physical footprint of the whole process tree (vmmap / docker stats), Apple Silicon · macOS 15 ·{' '}
         <a
           className="underline decoration-zinc-700 underline-offset-2 hover:text-zinc-300"
-          href="https://github.com/sanketsahu/tinbase/blob/main/bench/footprint.ts"
+          href="https://github.com/tinbase/tinbase/blob/main/bench/footprint.ts"
         >
           bench/footprint.ts
         </a>

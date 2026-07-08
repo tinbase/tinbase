@@ -97,7 +97,7 @@ export default function Home() {
           </p>
           <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
             <LinkButton href="/docs">Get started</LinkButton>
-            <LinkButton variant="outline" href="https://github.com/sanketsahu/tinbase">
+            <LinkButton variant="outline" href="https://github.com/tinbase/tinbase">
               <GitHubIcon /> Star on GitHub
             </LinkButton>
           </div>

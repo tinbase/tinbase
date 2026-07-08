@@ -99,7 +99,7 @@ export default function StudioPage() {
           <div className="mt-4 flex justify-center gap-3">
             <LinkButton href="/docs">Read the docs</LinkButton>
             <Link
-              href="https://github.com/sanketsahu/tinbase"
+              href="https://github.com/tinbase/tinbase"
               className="inline-flex h-10 items-center rounded-lg border border-zinc-700 px-5 text-sm font-semibold text-zinc-200 hover:bg-zinc-800/60"
             >
               GitHub
