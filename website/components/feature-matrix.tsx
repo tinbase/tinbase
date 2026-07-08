@@ -84,7 +84,7 @@ const GROUPS: Group[] = [
     coverage: 'extension-free',
     rows: [
       ['Database webhooks (CDC → HTTP)', 'yes', 'replaces pg_net http_post'],
-      ['Cron jobs (cron.schedule)', 'yes', 'replaces pg_cron'],
+      ['Cron jobs (cron.schedule)', 'yes', 'pg_cron API — local tz, no pg_net'],
       ['Queues (pgmq subset)', 'yes', 'replaces pgmq'],
     ],
   },
