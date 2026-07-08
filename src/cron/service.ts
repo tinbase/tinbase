@@ -2,7 +2,8 @@
  * In-process scheduler that runs the jobs recorded in cron.job — the execution
  * half of our pg_cron emulation (the cron.schedule()/unschedule() SQL functions
  * live in db/emulated.ts). Supports standard 5-field cron expressions and
- * pg_cron's "N seconds" form. Runs due job commands as superuser and logs each
+ * pg_cron's "N seconds" form. Cron fields are matched in UTC, to match hosted
+ * pg_cron (which runs in UTC). Runs due job commands as superuser and logs each
  * run to cron.job_run_details.
  */
 import type { Database } from '../db/database.js'
@@ -90,11 +91,14 @@ export class CronService {
   }
 }
 
-/** Match a Date against a standard 5-field cron expression (min hour dom month dow). */
+/**
+ * Match a Date against a standard 5-field cron expression (min hour dom month
+ * dow). Fields are evaluated in UTC, matching hosted pg_cron.
+ */
 export function cronMatches(expr: string, date: Date): boolean {
   const fields = expr.trim().split(/\s+/)
   if (fields.length !== 5) return false
-  const parts = [date.getMinutes(), date.getHours(), date.getDate(), date.getMonth() + 1, date.getDay()]
+  const parts = [date.getUTCMinutes(), date.getUTCHours(), date.getUTCDate(), date.getUTCMonth() + 1, date.getUTCDay()]
   const ranges = [
     [0, 59],
     [0, 23],

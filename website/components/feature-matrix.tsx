@@ -83,8 +83,9 @@ const GROUPS: Group[] = [
     area: 'Automation',
     coverage: 'extension-free',
     rows: [
-      ['Database webhooks (CDC → HTTP)', 'yes', 'replaces pg_net http_post'],
-      ['Cron jobs (cron.schedule)', 'yes', 'pg_cron API — local tz, no pg_net'],
+      ['Database webhooks (CDC → HTTP)', 'yes', 'Supabase webhook payload'],
+      ['Cron jobs (cron.schedule)', 'yes', 'pg_cron API — matches in UTC'],
+      ['HTTP from SQL (net.http_post/get)', 'yes', 'pg_net emulation'],
       ['Queues (pgmq subset)', 'yes', 'replaces pgmq'],
     ],
   },

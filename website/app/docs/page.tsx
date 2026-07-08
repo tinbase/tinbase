@@ -249,19 +249,20 @@ Deno.serve(async (req) => {
             <code className={IC}>select cron.schedule(&apos;nightly&apos;, &apos;0 0 * * *&apos;, &apos;delete from logs&apos;)</code>{' '}
             (also the <code className={IC}>&apos;N seconds&apos;</code> form), <code className={IC}>cron.unschedule(...)</code>,
             and the <code className={IC}>cron.job</code> / <code className={IC}>cron.job_run_details</code> tables.
-            An in-process scheduler runs due jobs and logs each run.
+            Schedules match in <b className="text-zinc-200">UTC</b>, like hosted pg_cron. An in-process scheduler
+            runs due jobs and logs each run.
           </P>
           <P>
-            Two behaviours differ from hosted pg_cron, and both matter. Schedules are evaluated in the
-            server&apos;s <b className="text-zinc-200">local timezone</b> — hosted pg_cron runs in UTC, so a{' '}
-            <code className={IC}>0 0 * * *</code> job fires at local midnight here, not UTC. And there is{' '}
-            <b className="text-zinc-200">no <code className={IC}>pg_net</code></b>: a job can&apos;t make an
-            outbound HTTP request, so the common Supabase pattern of{' '}
-            <code className={IC}>cron.schedule(..., $$ select net.http_post(...) $$)</code> won&apos;t run.
-            Schedule SQL (call a function, <code className={IC}>pgmq.send</code>, a cleanup query), and use{' '}
-            <b className="text-zinc-200">Database Webhooks</b> for change-driven HTTP. Jobs also run only while
-            tinbase is up (no catch-up of missed runs) and execute with service-role privileges (RLS bypassed).
-            Cron runs on the wasm and native engines, not pg-mem.
+            <b className="text-zinc-200">HTTP from SQL</b> — a pg_net emulation:{' '}
+            <code className={IC}>net.http_post</code> / <code className={IC}>net.http_get</code> /{' '}
+            <code className={IC}>net.http_delete(...)</code> enqueue a request that an in-process worker sends,
+            recording the reply in <code className={IC}>net._http_response</code>. So the common Supabase pattern —
+            a cron job that calls an Edge Function,{' '}
+            <code className={IC}>cron.schedule(..., $$ select net.http_post(...) $$)</code> — runs unchanged.
+          </P>
+          <P>
+            All of the above run only while tinbase is up (no catch-up of missed runs), execute with service-role
+            privileges (RLS bypassed), and are available on the wasm and native engines, not pg-mem.
           </P>
           <P>
             <b className="text-zinc-200">Queues</b> — a pgmq subset: call from SQL or the client.

@@ -69,8 +69,9 @@ describe('cron', () => {
     expect(after.rows.length).toBe(0)
   })
 
-  it('cronMatches handles *, ranges, lists, and steps', () => {
-    const at = (m: number, h: number, dom = 1, mon = 1, dow = 1) => new Date(2026, mon - 1, dom, h, m)
+  it('cronMatches handles *, ranges, lists, and steps (in UTC)', () => {
+    // built in UTC — cron fields are matched in UTC to mirror hosted pg_cron
+    const at = (m: number, h: number, dom = 1, mon = 1, dow = 1) => new Date(Date.UTC(2026, mon - 1, dom, h, m))
     expect(cronMatches('* * * * *', at(37, 9))).toBe(true)
     expect(cronMatches('0 0 * * *', at(0, 0))).toBe(true)
     expect(cronMatches('0 0 * * *', at(1, 0))).toBe(false)

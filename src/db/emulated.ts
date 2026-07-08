@@ -155,3 +155,83 @@ end $cron$;
 
 grant execute on function cron.schedule(text,text,text), cron.schedule(text,text), cron.unschedule(text), cron.unschedule(bigint) to service_role, authenticated;
 `
+
+// pg_net emulation — the `net.http_get/post/delete` SQL surface. The functions
+// only enqueue into net.http_request_queue; the in-process NetService
+// (src/net/service.ts) performs the HTTP and records the reply in
+// net._http_response, exactly like pg_net's background worker. This lets the
+// common Supabase pattern — a cron job that calls net.http_post to hit an Edge
+// Function — run unchanged, with no C extension on either engine.
+export const NET_SQL = `
+create schema if not exists net;
+grant usage on schema net to service_role, authenticated;
+
+create table if not exists net.http_request_queue (
+  id bigint generated always as identity primary key,
+  method text not null,
+  url text not null,
+  headers jsonb not null default '{}'::jsonb,
+  body text,
+  timeout_milliseconds int not null default 5000,
+  created timestamptz not null default now()
+);
+
+create table if not exists net._http_response (
+  id bigint primary key,
+  status_code int,
+  content_type text,
+  headers jsonb,
+  content text,
+  timed_out boolean,
+  error_msg text,
+  created timestamptz not null default now()
+);
+grant select on net._http_response to service_role, authenticated;
+
+-- fold a jsonb param object into the URL as a query string (pg_net semantics)
+create or replace function net._merge_params(url text, params jsonb)
+returns text language sql immutable as $net$
+  select case
+    when params is null or params = '{}'::jsonb then url
+    else url || (case when position('?' in url) > 0 then '&' else '?' end) ||
+      (select string_agg(key || '=' || (value #>> '{}'), '&') from jsonb_each(params))
+  end;
+$net$;
+
+create or replace function net.http_get(url text, params jsonb default '{}'::jsonb, headers jsonb default '{}'::jsonb, timeout_milliseconds int default 5000)
+returns bigint language plpgsql security definer set search_path = net, pg_catalog, public as $net$
+declare req_id bigint;
+begin
+  insert into net.http_request_queue (method, url, headers, body, timeout_milliseconds)
+  values ('GET', net._merge_params(url, params), coalesce(headers, '{}'::jsonb), null, timeout_milliseconds)
+  returning id into req_id;
+  return req_id;
+end $net$;
+
+create or replace function net.http_post(url text, body jsonb default '{}'::jsonb, params jsonb default '{}'::jsonb, headers jsonb default '{}'::jsonb, timeout_milliseconds int default 5000)
+returns bigint language plpgsql security definer set search_path = net, pg_catalog, public as $net$
+declare req_id bigint; hdrs jsonb;
+begin
+  hdrs := coalesce(headers, '{}'::jsonb);
+  -- default the content type to JSON, matching pg_net, unless the caller set one
+  if not (hdrs ? 'Content-Type' or hdrs ? 'content-type') then
+    hdrs := hdrs || jsonb_build_object('Content-Type', 'application/json');
+  end if;
+  insert into net.http_request_queue (method, url, headers, body, timeout_milliseconds)
+  values ('POST', net._merge_params(url, params), hdrs, body::text, timeout_milliseconds)
+  returning id into req_id;
+  return req_id;
+end $net$;
+
+create or replace function net.http_delete(url text, params jsonb default '{}'::jsonb, headers jsonb default '{}'::jsonb, timeout_milliseconds int default 5000)
+returns bigint language plpgsql security definer set search_path = net, pg_catalog, public as $net$
+declare req_id bigint;
+begin
+  insert into net.http_request_queue (method, url, headers, body, timeout_milliseconds)
+  values ('DELETE', net._merge_params(url, params), coalesce(headers, '{}'::jsonb), null, timeout_milliseconds)
+  returning id into req_id;
+  return req_id;
+end $net$;
+
+grant execute on function net.http_get(text,jsonb,jsonb,int), net.http_post(text,jsonb,jsonb,jsonb,int), net.http_delete(text,jsonb,jsonb,int) to service_role, authenticated;
+`

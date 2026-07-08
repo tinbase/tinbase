@@ -43,6 +43,8 @@ export interface BackendConfig {
   webhooks?: import('./webhooks/service.js').WebhookConfig[]
   /** Injectable fetch for webhook delivery (tests capture calls). */
   webhookFetch?: typeof fetch
+  /** Injectable fetch for net.http_* (pg_net emulation) delivery (tests capture calls). */
+  netFetch?: typeof fetch
   /** Print startup/debug logs. */
   log?: (msg: string) => void
 }
