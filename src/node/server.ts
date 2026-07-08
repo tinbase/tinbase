@@ -1,7 +1,30 @@
 /** Node HTTP wrapper: serves the backend's fetch handler and upgrades /realtime/v1 WebSockets. */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import { createServer as createNetServer } from 'node:net'
 import type { TinbaseBackend } from '../index.js'
 import { acceptWebSocket } from './ws.js'
+
+/** Resolve whether a port is free to bind on `host`. */
+function portIsFree(port: number, host: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const tester = createNetServer()
+    tester.once('error', () => resolve(false))
+    tester.once('listening', () => tester.close(() => resolve(true)))
+    tester.listen(port, host)
+  })
+}
+
+/**
+ * First free port at or after `startPort` (scanning up to `maxTries`), or null
+ * if none. Used so `tinbase start` skips a port that's already in use (e.g. a
+ * tinbase instance already running) instead of crashing with EADDRINUSE.
+ */
+export async function findAvailablePort(startPort: number, host = '127.0.0.1', maxTries = 20): Promise<number | null> {
+  for (let p = startPort; p < startPort + maxTries; p++) {
+    if (await portIsFree(p, host)) return p
+  }
+  return null
+}
 
 export interface ServeOptions {
   port?: number
@@ -44,7 +67,13 @@ export async function serve(backend: TinbaseBackend, opts: ServeOptions = {}): P
   })
 
   await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
+    server.once('error', (err: NodeJS.ErrnoException) => {
+      reject(
+        err.code === 'EADDRINUSE'
+          ? new Error(`port ${opts.port ?? 54321} is already in use — pass --port <n> to choose another`)
+          : err
+      )
+    })
     server.listen(opts.port ?? 54321, host, () => resolve())
   })
   const address = server.address()
