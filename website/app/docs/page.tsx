@@ -1,9 +1,12 @@
+import Link from 'next/link'
 import { SiteNav } from '@/components/site-nav'
 import { Code } from '@/components/code'
 import { WeightChart } from '@/components/weight-chart'
+import { ArchitectureDiagram } from '@/components/architecture-diagram'
 
 const SECTIONS = [
   { id: 'why', label: 'Why tinbase' },
+  { id: 'architecture', label: 'Architecture' },
   { id: 'getting-started', label: 'Getting started' },
   { id: 'cli', label: 'CLI reference' },
   { id: 'engines', label: 'Engines' },
@@ -90,6 +93,20 @@ export default function Docs() {
             excellent standalone local Supabase replacement, so it is open source for everyone.
           </P>
 
+          <H2 id="architecture">Architecture</H2>
+          <P>
+            The official <code className={IC}>supabase-js</code> SDK talks to a single{' '}
+            <code className={IC}>(Request) =&gt; Response</code> fetch handler. That handler routes to the service
+            implementations — PostgREST-compatible REST, GoTrue-compatible auth, Storage, the Realtime Phoenix
+            protocol, Edge Functions, and the Studio admin API — and every one of them sits on a single swappable{' '}
+            <code className={IC}>DbEngine</code> adapter. Swap the engine (PGlite / native / pg-mem) without changing a
+            line above it. In Node the handler is wrapped in an HTTP + WebSocket server; in the browser you call it
+            in-process — see <Link className="text-emerald-400 hover:text-emerald-300" href="/browser">running in the browser</Link>.
+          </P>
+          <div className="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/60 p-5">
+            <ArchitectureDiagram />
+          </div>
+
           <H2 id="getting-started">Getting started</H2>
           <P>
             tinbase is a Supabase-compatible backend in a single process. In a project with a{' '}
@@ -171,7 +188,8 @@ tinbase db diff    # DDL for out-of-migration schema changes
           <P>
             A built-in dashboard ships at <code className={IC}>/_/</code>, shaped like Supabase
             Studio (React + Radix + Tailwind). Log in with the{' '}
-            <code className={IC}>service_role</code> key printed at startup:
+            <code className={IC}>service_role</code> key printed at startup. See the{' '}
+            <Link className="text-emerald-400 hover:text-emerald-300" href="/studio">full Studio tour with screenshots</Link>:
           </P>
           <ul className="ml-5 list-disc space-y-1 text-neutral-400 text-zinc-400">
             <li>
@@ -266,7 +284,9 @@ const supabase = createClient<Database>(url, anonKey)  // fully typed queries`}<
           <P>
             The core is a pure <code className={IC}>(Request) =&gt; Response</code> fetch handler.
             Serve it over HTTP in Node, or hand it to supabase-js as a custom fetch and run the whole
-            backend in-process — in the browser, PGlite persists to IndexedDB/OPFS:
+            backend in-process — in the browser, PGlite persists to IndexedDB/OPFS. There&apos;s a{' '}
+            <Link className="text-emerald-400 hover:text-emerald-300" href="/browser">dedicated guide to running in the browser</Link>{' '}
+            (including the lighter pure-JS pg-mem engine):
           </P>
           <Pre lang="ts">{`import { createBackend } from 'tinbase'
 

@@ -14,7 +14,13 @@ export function SiteNav() {
           <Link href="/docs" className="rounded-md px-3 py-1.5 text-zinc-300 hover:bg-zinc-800/60 hover:text-white">
             Docs
           </Link>
-          <a href="/#benchmarks" className="rounded-md px-3 py-1.5 text-zinc-300 hover:bg-zinc-800/60 hover:text-white">
+          <Link href="/studio" className="rounded-md px-3 py-1.5 text-zinc-300 hover:bg-zinc-800/60 hover:text-white">
+            Studio
+          </Link>
+          <Link href="/browser" className="rounded-md px-3 py-1.5 text-zinc-300 hover:bg-zinc-800/60 hover:text-white">
+            Browser
+          </Link>
+          <a href="/#benchmarks" className="hidden rounded-md px-3 py-1.5 text-zinc-300 hover:bg-zinc-800/60 hover:text-white sm:block">
             Benchmarks
           </a>
           <a

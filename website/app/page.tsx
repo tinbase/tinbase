@@ -2,6 +2,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { WeightChart } from '@/components/weight-chart'
 import { FeatureIcon } from '@/components/feature-icon'
+import { ArchitectureDiagram } from '@/components/architecture-diagram'
 import { SiteNav } from '@/components/site-nav'
 import { Badge, Card, LinkButton } from '@/components/ui'
 import { Code } from '@/components/code'
@@ -163,6 +164,45 @@ export default function Home() {
             </div>
             <Code code={CODE} lang="ts" />
           </div>
+        </section>
+
+        {/* architecture */}
+        <section className="border-t border-zinc-800/80 py-20">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-emerald-400">Architecture</p>
+          <h2 className="text-3xl font-bold tracking-tight">One fetch handler, three engines</h2>
+          <p className="mt-3 max-w-2xl text-zinc-400">
+            supabase-js talks to a single <code className="font-mono text-sm text-emerald-300">(Request) ⇒ Response</code>{' '}
+            handler that fans out to the service handlers, all sitting on one swappable database engine. The same handler
+            is an HTTP + WebSocket server in Node, or runs in-process in a browser tab.
+          </p>
+          <Card className="mt-10 p-6 sm:p-8">
+            <ArchitectureDiagram />
+          </Card>
+        </section>
+
+        {/* studio teaser */}
+        <section className="border-t border-zinc-800/80 py-20">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-emerald-400">Studio</p>
+          <h2 className="text-3xl font-bold tracking-tight">A dashboard in the box</h2>
+          <p className="mt-3 max-w-2xl text-zinc-400">
+            A Supabase-Studio-style dashboard ships at <code className="font-mono text-sm text-emerald-300">/_/</code> —
+            table editor, SQL, auth, RLS policies, storage, and live logs. No extra process.
+          </p>
+          <Link href="/studio" className="group mt-8 block">
+            <Card className="overflow-hidden p-0 transition-colors group-hover:border-zinc-700">
+              <Image
+                src="/screenshots/table-editor.png"
+                alt="tinbase Studio table editor"
+                width={1440}
+                height={900}
+                className="h-auto w-full"
+                unoptimized
+              />
+            </Card>
+            <span className="mt-4 inline-block text-sm font-semibold text-emerald-400 group-hover:text-emerald-300">
+              Tour the Studio →
+            </span>
+          </Link>
         </section>
 
         {/* why it was built */}
