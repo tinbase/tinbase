@@ -1,5 +1,11 @@
 import { BOOTSTRAP_SQL, MINIMAL_BOOTSTRAP_SQL } from './bootstrap.js'
-import { PGMQ_SQL, CRON_SQL, NET_SQL } from './emulated.js'
+import { PGMQ_SQL, CRON_SQL, NET_SQL, EXT_COMPAT_SQL, VAULT_SQL } from './emulated.js'
+import { rewriteMigrationSql } from './sql-compat.js'
+
+// tinbase's default session search_path (matches bootstrap + Supabase's, with
+// the extensions schema on the path). Reset to this before each migration so a
+// migration's own `SET search_path` can't leak across our single connection.
+const DEFAULT_SEARCH_PATH_SQL = `set search_path to "$user", public, extensions`
 import { createPgliteEngine } from './pglite-engine.js'
 import type { DbEngine, EngineResults, EngineTx } from './engine.js'
 import type { MigrationFile, RequestContext } from '../types.js'
@@ -85,6 +91,8 @@ export class Database {
       await engine.exec(PGMQ_SQL)
       await engine.exec(CRON_SQL)
       await engine.exec(NET_SQL)
+      await engine.exec(EXT_COMPAT_SQL)
+      await engine.exec(VAULT_SQL)
     }
     return new Database(engine)
   }
@@ -127,7 +135,13 @@ export class Database {
       )
       if (seen.rows.length > 0) continue
       await this.engine.transaction(async (tx) => {
-        await tx.exec(m.sql)
+        // The Supabase CLI applies each migration on a fresh connection, so a
+        // top-level `SET search_path TO ''` in one file never leaks to the next.
+        // tinbase runs every migration on one connection, so reset to the
+        // default first — otherwise a hardened migration's search_path change
+        // breaks unqualified calls (e.g. gen_random_bytes) in later files.
+        await tx.exec(DEFAULT_SEARCH_PATH_SQL)
+        await tx.exec(rewriteMigrationSql(m.sql))
         await tx.query(
           `insert into supabase_migrations.schema_migrations (version, name, statements)
            values ($1, $2, $3)`,
@@ -144,7 +158,8 @@ export class Database {
       )
       if (seen.rows.length === 0) {
         await this.engine.transaction(async (tx) => {
-          await tx.exec(seedSql)
+          await tx.exec(DEFAULT_SEARCH_PATH_SQL)
+          await tx.exec(rewriteMigrationSql(seedSql))
           await tx.query(
             `insert into supabase_migrations.seed_files (path, hash) values ('supabase/seed.sql', $1)
              on conflict (path) do update set hash = excluded.hash, applied_at = now()`,
@@ -154,7 +169,12 @@ export class Database {
         applied.push('seed.sql')
       }
     }
-    if (applied.length > 0) this.invalidateSchemaCache()
+    if (applied.length > 0) {
+      // a migration/seed may have left the session search_path at '' — restore
+      // the default so runtime queries resolve extension functions unqualified
+      await this.engine.exec(DEFAULT_SEARCH_PATH_SQL)
+      this.invalidateSchemaCache()
+    }
     return applied
   }
 

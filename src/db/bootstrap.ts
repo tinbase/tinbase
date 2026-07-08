@@ -218,6 +218,7 @@ alter default privileges in schema public
 create schema if not exists auth;
 
 create table if not exists auth.users (
+  instance_id uuid default '00000000-0000-0000-0000-000000000000',
   id uuid primary key default gen_random_uuid(),
   aud text default 'authenticated',
   role text default 'authenticated',
@@ -225,8 +226,15 @@ create table if not exists auth.users (
   encrypted_password text,
   email_confirmed_at timestamptz,
   invited_at timestamptz,
-  confirmation_token text,
-  recovery_token text,
+  confirmation_token text default '',
+  confirmation_sent_at timestamptz,
+  recovery_token text default '',
+  recovery_sent_at timestamptz,
+  email_change_token_new text default '',
+  email_change text default '',
+  email_change_sent_at timestamptz,
+  email_change_token_current text default '',
+  email_change_confirm_status smallint default 0,
   last_sign_in_at timestamptz,
   raw_app_meta_data jsonb default '{}'::jsonb,
   raw_user_meta_data jsonb default '{}'::jsonb,
@@ -235,6 +243,11 @@ create table if not exists auth.users (
   updated_at timestamptz default now(),
   phone text unique,
   phone_confirmed_at timestamptz,
+  phone_change text default '',
+  phone_change_token text default '',
+  phone_change_sent_at timestamptz,
+  reauthentication_token text default '',
+  reauthentication_sent_at timestamptz,
   banned_until timestamptz,
   deleted_at timestamptz,
   is_anonymous boolean default false

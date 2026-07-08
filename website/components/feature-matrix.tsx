@@ -86,7 +86,8 @@ const GROUPS: Group[] = [
       ['Database webhooks (CDC → HTTP)', 'yes', 'Supabase webhook payload'],
       ['Cron jobs (cron.schedule)', 'yes', 'pg_cron API — matches in UTC'],
       ['HTTP from SQL (net.http_post/get)', 'yes', 'pg_net emulation'],
-      ['Queues (pgmq subset)', 'yes', 'replaces pgmq'],
+      ['Queues (pgmq: send/read/pop/archive/drop/purge/list)', 'yes', 'replaces pgmq'],
+      ['Secrets (Supabase Vault)', 'yes', 'create_secret / decrypted_secrets'],
     ],
   },
   {
@@ -94,6 +95,7 @@ const GROUPS: Group[] = [
     coverage: '~80%',
     rows: [
       ['supabase/migrations + seed conventions', 'yes', 'portable to hosted Supabase'],
+      ['Runs real projects unchanged (CREATE EXTENSION tolerated, CONCURRENTLY, per-file search_path)', 'yes', 'e.g. Cap-go/capgo: 335 migrations + seed'],
       ['db reset, db diff, db pull, inspect', 'yes', ''],
       ['gen types (TypeScript Database type)', 'yes', ''],
       ['Studio: table editor, SQL, auth, RLS editor, storage, logs', 'yes', 'at /_/'],

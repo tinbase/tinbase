@@ -92,6 +92,28 @@ begin
   return n > 0;
 end $pgmq$;
 
+create or replace function pgmq.drop_queue(queue_name text) returns boolean language plpgsql security definer set search_path = pgmq, pg_catalog, public as $pgmq$
+begin
+  execute format('drop table if exists pgmq.%I', 'q_' || queue_name);
+  execute format('drop table if exists pgmq.%I', 'a_' || queue_name);
+  return true;
+end $pgmq$;
+
+create or replace function pgmq.purge_queue(queue_name text) returns bigint language plpgsql security definer set search_path = pgmq, pg_catalog, public as $pgmq$
+declare n bigint;
+begin
+  execute format('delete from pgmq.%I', 'q_' || queue_name);
+  get diagnostics n = row_count;
+  return n;
+end $pgmq$;
+
+create or replace function pgmq.list_queues()
+returns table(queue_name text, is_partitioned boolean, is_unlogged boolean, created_at timestamptz)
+language sql security definer set search_path = pgmq, pg_catalog, public as $pgmq$
+  select substring(tablename from 3), false, false, now()
+  from pg_tables where schemaname = 'pgmq' and left(tablename, 2) = 'q_';
+$pgmq$;
+
 grant execute on all functions in schema pgmq to anon, authenticated, service_role;
 `
 
@@ -234,4 +256,84 @@ begin
 end $net$;
 
 grant execute on function net.http_get(text,jsonb,jsonb,int), net.http_post(text,jsonb,jsonb,jsonb,int), net.http_delete(text,jsonb,jsonb,int) to service_role, authenticated;
+`
+
+// Small pure-SQL stand-ins for contrib extensions Supabase migrations lean on
+// but which aren't in the PGlite / native builds. `moddatetime` (a BEFORE
+// UPDATE trigger that stamps a timestamp column) is the common one — projects
+// attach it as the updated_at trigger. Created only if absent, so a real
+// extension (where present) still wins.
+export const EXT_COMPAT_SQL = `
+create schema if not exists extensions;
+do $ensure_moddatetime$
+begin
+  if not exists (
+    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'extensions' and p.proname = 'moddatetime'
+  ) then
+    execute $fn$
+      create function extensions.moddatetime() returns trigger language plpgsql as $mod$
+      begin
+        if TG_NARGS >= 1 then
+          NEW := jsonb_populate_record(NEW, jsonb_build_object(TG_ARGV[0], now()));
+        end if;
+        return NEW;
+      end
+      $mod$
+    $fn$;
+  end if;
+end
+$ensure_moddatetime$;
+`
+
+// Supabase Vault emulation. Real Vault (supabase_vault + pgsodium) encrypts
+// secrets at rest; we can't ship those C extensions, so this is a dev-only
+// plaintext stand-in with the same surface: vault.secrets, the
+// vault.decrypted_secrets view, and vault.create_secret / update_secret. Enough
+// for migrations and app code that store/read secrets by name to work locally.
+// NOT for production — secrets are stored in cleartext.
+export const VAULT_SQL = `
+create schema if not exists vault;
+grant usage on schema vault to service_role;
+
+create table if not exists vault.secrets (
+  id uuid primary key default gen_random_uuid(),
+  name text unique,
+  description text not null default '',
+  secret text not null,
+  key_id uuid,
+  nonce bytea,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+grant select, insert, update, delete on vault.secrets to service_role;
+
+create or replace view vault.decrypted_secrets as
+  select id, name, description, secret, secret as decrypted_secret, key_id, nonce, created_at, updated_at
+  from vault.secrets;
+grant select on vault.decrypted_secrets to service_role;
+
+create or replace function vault.create_secret(new_secret text, new_name text default null, new_description text default '', new_key_id uuid default null)
+returns uuid language plpgsql security definer set search_path = vault, pg_catalog, public as $vault$
+declare rec_id uuid;
+begin
+  insert into vault.secrets (name, description, secret, key_id)
+  values (new_name, coalesce(new_description, ''), new_secret, new_key_id)
+  returning id into rec_id;
+  return rec_id;
+end $vault$;
+
+create or replace function vault.update_secret(secret_id uuid, new_secret text default null, new_name text default null, new_description text default null, new_key_id uuid default null)
+returns void language plpgsql security definer set search_path = vault, pg_catalog, public as $vault$
+begin
+  update vault.secrets set
+    secret = coalesce(new_secret, secret),
+    name = coalesce(new_name, name),
+    description = coalesce(new_description, description),
+    key_id = coalesce(new_key_id, key_id),
+    updated_at = now()
+  where id = secret_id;
+end $vault$;
+
+grant execute on function vault.create_secret(text,text,text,uuid), vault.update_secret(uuid,text,text,text,uuid) to service_role;
 `
