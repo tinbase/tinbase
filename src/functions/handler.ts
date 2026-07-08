@@ -13,11 +13,13 @@ export type EdgeFunction = (req: Request, ctx: FunctionContext) => Response | Pr
 export interface FunctionContext {
   /** Verified request context (role + JWT claims) resolved by the router. */
   auth: RequestContext
-  /** Keys/urls so the function can create its own supabase-js client. */
+  /** Keys/urls so the function can create its own supabase-js client, plus any
+   * secrets loaded from supabase/functions/.env. */
   env: {
     SUPABASE_URL: string
     SUPABASE_ANON_KEY: string
     SUPABASE_SERVICE_ROLE_KEY: string
+    [key: string]: string
   }
 }
 

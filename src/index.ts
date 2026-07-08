@@ -137,6 +137,7 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
     SUPABASE_URL: siteUrl,
     SUPABASE_ANON_KEY: anonKey,
     SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey,
+    ...(config.functionEnv ?? {}),
   }
   // make these visible to Deno.serve-style functions via the shim's Deno.env
   installDenoShim()

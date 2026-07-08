@@ -14,7 +14,7 @@ import { createBackend, generateTypes, createPgmemEngine, inspectDb } from './in
 import { computeDbDiff, pullSchema, shadowNativeDataDir } from './node/db-diff.js'
 import { createNativeEngine } from './node/native/engine.js'
 import { FsStorageDriver } from './node/fs-driver.js'
-import { loadFunctions } from './node/load-functions.js'
+import { loadFunctions, loadFunctionEnv } from './node/load-functions.js'
 import { loadOAuthProviders } from './node/load-oauth.js'
 import { loadSupabaseProject } from './node/project.js'
 import { serve } from './node/server.js'
@@ -277,6 +277,7 @@ async function main(): Promise<void> {
 
   const project = await loadSupabaseProject(opts.dir)
   const functions = await loadFunctions(opts.dir)
+  const functionEnv = await loadFunctionEnv(opts.dir)
   const oauthProviders = loadOAuthProviders(opts.dir)
   const webhooks = loadWebhooks(opts.dir)
   if (opts.dataDir) await mkdir(opts.dataDir, { recursive: true })
@@ -303,6 +304,7 @@ async function main(): Promise<void> {
     migrations: project.migrations,
     seedSql: project.seedSql,
     functions,
+    functionEnv,
     oauthProviders,
     webhooks,
     storageDriver: new FsStorageDriver(opts.storageDir),

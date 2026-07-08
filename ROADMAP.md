@@ -46,7 +46,7 @@ Until the harness exists, coverage numbers below are our own honest estimates.
 | Auth (GoTrue) | ~90% | SSO, phone auth |
 | Storage | ~80% | image transforms, resumable (TUS) uploads |
 | Realtime | ~90% | per-row DELETE RLS (WALRUS) |
-| Edge Functions | ~70% | npm:/jsr: import resolution, secrets |
+| Edge Functions | ~85% | remote-import fetch needs network at first run |
 | Studio | ~80% | table/column designer UI |
 | Type generation | ~85% | composite-type args, multi-schema output |
 | Extensions (pgvector, pg_cron, pg_net, pgmq) | partial/0% | vector search, cron, webhooks, queues |
@@ -98,8 +98,8 @@ in the theseus native Postgres binaries or this PGlite build. Two tracks:
 ### Phase 5 — Edge Functions runtime fidelity
 - [x] Deno-compatible execution via a Deno.serve/Deno.env shim (functions using
       Web APIs run unchanged; npm:/jsr:/URL imports still need bundling)
-- [ ] Resolve npm:/jsr:/URL import specifiers (bundling step)
-- [ ] Function secrets; local invoke parity with `supabase functions serve`
+- [x] Resolve npm:/jsr:/URL import specifiers — esbuild bundling; npm:/jsr: rewritten to esm.sh, https imports fetched + disk-cached (TS + relative imports also bundle)
+- [x] Function secrets — supabase/functions/.env → Deno.env + ctx.env (local `--env-file` parity)
 - Target: real Supabase functions run with no edits
 
 ### Phase 6 — Storage & PostgREST fidelity edges
