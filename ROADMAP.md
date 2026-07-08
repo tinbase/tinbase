@@ -107,6 +107,25 @@ in the theseus native Postgres binaries or this PGlite build. Two tracks:
 - [ ] PostgREST aggregates-in-select, `.explain()`, `.csv()`, spread embeds
 - [ ] Error-shape matching verified by the parity harness
 
+### Phase 7 — Connect to an external Postgres (community request)
+Requested on X: *"Would be nice if it could use an external PG instance."* Point
+tinbase's REST, Auth, Storage, and Realtime at a Postgres you already run
+instead of the embedded PGlite/native engine.
+- [ ] A `--database-url postgres://…` (and `createBackend({ databaseUrl })`)
+      engine: a new `DbEngine` adapter over the wire protocol, so nothing above
+      the adapter changes. Reuses the existing native `PgWireClient`.
+- [ ] Treat the target as shared/pre-existing: bootstrap idempotently, keep the
+      `supabase_migrations` conventions, and never assume exclusive ownership or
+      that it starts empty.
+- [ ] Bonus — a BYO Postgres that already has `pg_cron` / `pg_net` / `pgvector`
+      gives you those for real, an alternative to bundling extension binaries
+      (Phase 4).
+- Open questions: the single-writer model vs a real connection (pool?); RLS role
+  switching (needs the target's `anon`/`authenticated` roles, or we create them);
+  realtime CDC without superuser/replication rights on a managed database.
+- Boundary: this is "bring your own local/dev Postgres," not managing a remote
+  Supabase Cloud project — hosting/pooling/replicas stay [out of scope](#scope-what-we-match-and-what-we-deliberately-dont).
+
 ## Working principles (so the goal survives across sessions)
 
 1. **Every change keeps the full suite green on both engines** (`npm test` and `TINBASE_TEST_ENGINE=native npm test`).
