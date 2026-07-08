@@ -10,7 +10,7 @@ export function Button({
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'default' | 'outline' | 'ghost' | 'danger'; size?: 'sm' | 'xs' }) {
   const variants = {
-    default: 'bg-brand text-black hover:bg-brand/90 font-medium',
+    default: 'bg-emerald-600 text-white hover:bg-emerald-500 font-medium',
     outline: 'border border-neutral-700 text-neutral-200 hover:bg-neutral-800 hover:border-neutral-600',
     ghost: 'text-neutral-300 hover:bg-neutral-800',
     danger: 'border border-red-900/60 text-red-400 hover:bg-red-950/40',

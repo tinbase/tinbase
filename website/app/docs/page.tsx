@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { SiteNav } from '@/components/site-nav'
 import { Code } from '@/components/code'
 import { WeightChart } from '@/components/weight-chart'
+import { FeatureMatrix } from '@/components/feature-matrix'
 import { ArchitectureDiagram } from '@/components/architecture-diagram'
 
 const SECTIONS = [
@@ -17,6 +18,7 @@ const SECTIONS = [
   { id: 'types', label: 'Typed clients' },
   { id: 'rls', label: 'Row Level Security' },
   { id: 'embedding', label: 'Embedding & browser' },
+  { id: 'feature-completeness', label: 'Feature completeness' },
   { id: 'coverage', label: 'API coverage' },
   { id: 'benchmarks', label: 'Benchmarks' },
 ]
@@ -292,6 +294,19 @@ const backend = await createBackend({
 const supabase = createClient('http://localhost', backend.anonKey, {
   global: { fetch: (i, init) => backend.fetch(new Request(i, init)) },
 })`}</Pre>
+
+          <H2 id="feature-completeness">Feature completeness</H2>
+          <P>
+            Where tinbase stands against the Supabase surface, mapped from the{' '}
+            <a className="text-emerald-400 hover:text-emerald-300" href="https://github.com/sanketsahu/tinbase/blob/main/ROADMAP.md">
+              roadmap
+            </a>
+. <span className="text-emerald-400">✓ Yes</span>{' '}
+            means it&apos;s implemented and covered by the test suite against the real supabase-js;{' '}
+            <span className="text-amber-400">◑ Partial</span> and{' '}
+            <span className="text-zinc-400">– Planned</span> are honest about the rest.
+          </P>
+          <FeatureMatrix />
 
           <H2 id="coverage">API coverage</H2>
           <div className="overflow-x-auto">

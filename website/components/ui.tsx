@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 import type { ButtonHTMLAttributes, HTMLAttributes, AnchorHTMLAttributes } from 'react'
 
 const buttonVariants = {
-  default: 'bg-emerald-500 text-zinc-950 hover:bg-emerald-400',
+  default: 'bg-emerald-600 text-white hover:bg-emerald-500',
   outline: 'border border-zinc-700 text-zinc-200 hover:bg-zinc-800/60 hover:text-white',
   ghost: 'text-zinc-300 hover:bg-zinc-800/60 hover:text-white',
 }
