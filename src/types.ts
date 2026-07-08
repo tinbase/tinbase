@@ -31,6 +31,8 @@ export interface BackendConfig {
   storageDriver?: StorageDriver
   /** Edge functions: name → fetch handler, served at /functions/v1/<name>. */
   functions?: Map<string, import('./functions/handler.js').EdgeFunction> | Record<string, import('./functions/handler.js').EdgeFunction>
+  /** Extra env/secrets exposed to functions via Deno.env and ctx.env (e.g. from supabase/functions/.env). */
+  functionEnv?: Record<string, string>
   /** Mail transport for OTP/magic-link/recovery emails. Default: console logger. */
   mailer?: Mailer
   /** OAuth providers, e.g. { google: { clientId, clientSecret } }. Served at /auth/v1/authorize. */
