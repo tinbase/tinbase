@@ -17,7 +17,7 @@ import { FsStorageDriver } from './node/fs-driver.js'
 import { loadFunctions, loadFunctionEnv } from './node/load-functions.js'
 import { loadOAuthProviders } from './node/load-oauth.js'
 import { loadSupabaseProject } from './node/project.js'
-import { serve } from './node/server.js'
+import { serve, findAvailablePort } from './node/server.js'
 import { serveBun } from './node/bun-server.js'
 
 const IS_BUN = typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined'
@@ -296,11 +296,30 @@ async function main(): Promise<void> {
     console.log('  ⚠ pg-mem engine: in-memory subset — no RLS, cron, or pgmq (realtime is unfiltered) — local dev / preview only')
   }
 
+  // For `start`, pick a free port up front (skipping one already in use, e.g. a
+  // tinbase already running) so the URL, keys, and siteUrl all reflect it —
+  // instead of crashing later with EADDRINUSE.
+  let port = opts.port
+  if (opts.command === 'start') {
+    const free = await findAvailablePort(opts.port, opts.host)
+    if (free === null) {
+      console.error(
+        `\n  ✖ No free port found near ${opts.port} (tried ${opts.port}–${opts.port + 19}).\n` +
+          `    Stop whatever is using it, or pass --port <n>.\n`
+      )
+      process.exit(1)
+    }
+    if (free !== opts.port) {
+      console.log(`  ⚠ Port ${opts.port} is in use — starting on ${free} instead (use --port to choose).`)
+    }
+    port = free
+  }
+
   const backend = await createBackend({
     engine,
     dataDir: opts.memory ? undefined : opts.dataDir,
     jwtSecret: opts.jwtSecret,
-    siteUrl: `http://${opts.host}:${opts.port}`,
+    siteUrl: `http://${opts.host}:${port}`,
     migrations: project.migrations,
     seedSql: project.seedSql,
     functions,
@@ -333,8 +352,8 @@ async function main(): Promise<void> {
   }
 
   const server = IS_BUN
-    ? await serveBun(backend, { port: opts.port, host: opts.host })
-    : await serve(backend, { port: opts.port, host: opts.host })
+    ? await serveBun(backend, { port, host: opts.host })
+    : await serve(backend, { port, host: opts.host })
   console.log(`
   tinbase running
 
