@@ -11,6 +11,7 @@ import { AdminApi } from './admin/api.js'
 import { ADMIN_HTML } from './admin/ui.js'
 import { AuthHandler } from './auth/handler.js'
 import { InboxMailer } from './auth/inbox.js'
+import { LogBuffer } from './log-buffer.js'
 import { FunctionsHandler, type EdgeFunction } from './functions/handler.js'
 import { installDenoShim, setDenoEnv } from './functions/deno-shim.js'
 import { Database } from './db/database.js'
@@ -29,6 +30,7 @@ export { createPgmemEngine } from './db/pgmem-engine.js'
 export { createPgliteEngine } from './db/pglite-engine.js'
 export { MemoryStorageDriver } from './storage/driver.js'
 export { InboxMailer, type InboxEntry } from './auth/inbox.js'
+export { LogBuffer, type LogEntry, type LogLevel } from './log-buffer.js'
 export { RealtimeEngine, type RealtimeSocketLike } from './realtime/engine.js'
 export { signJwt, verifyJwt, decodeJwt } from './jwt.js'
 export { FunctionsHandler, type EdgeFunction, type FunctionContext } from './functions/handler.js'
@@ -52,6 +54,8 @@ export interface TinbaseBackend {
   /** JWT for the service_role — bypasses RLS. */
   serviceRoleKey: string
   jwtSecret: string
+  /** Recent server logs (also surfaced in the Studio Logs pane). */
+  logs: LogBuffer
   /** Captured dev email inbox (mounted at /inbox), or null if a custom mailer was provided. */
   inbox: InboxMailer | null
   /** Apply additional migrations at runtime. */
@@ -73,10 +77,19 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
   const siteUrl = config.siteUrl ?? 'http://localhost:54321'
   const jwtExpiry = config.jwtExpiry ?? 3600
 
+  // capture server logs for the Studio "Logs" pane, still forwarding to the
+  // configured logger (or console)
+  const logs = new LogBuffer()
+  const baseLog = config.log ?? ((m: string) => console.log(m))
+  const log = (m: string) => {
+    logs.push(m)
+    baseLog(m)
+  }
+
   const db = await Database.create(config.engine ?? config.dataDir)
   if (config.migrations?.length || config.seedSql) {
     const applied = await db.runMigrations(config.migrations ?? [], config.seedSql)
-    if (applied.length > 0) config.log?.(`applied migrations: ${applied.join(', ')}`)
+    if (applied.length > 0) log(`applied migrations: ${applied.join(', ')}`)
   }
 
   const now = Math.floor(Date.now() / 1000)
@@ -93,7 +106,7 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
   // mounted.
   const inbox = config.mailer
     ? null
-    : new InboxMailer((msg) => (config.log ?? console.log)(`[mail] to=${msg.to} subject="${msg.subject}"\n${msg.text}`))
+    : new InboxMailer((msg) => log(`[mail] to=${msg.to} subject="${msg.subject}"\n${msg.text}`))
   const mailer: Mailer = config.mailer ?? inbox!
   const auth = new AuthHandler(db, {
     jwtSecret,
@@ -108,13 +121,13 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
   await realtime.start()
 
   const webhooks = new WebhooksService(db, config.webhookFetch, (d: WebhookDelivery) =>
-    config.log?.(`[webhook] ${d.event.type} ${d.event.schema}.${d.event.table} -> ${d.webhook.url} ${d.ok ? d.status : 'FAILED ' + (d.error ?? '')}`)
+    log(`[webhook] ${d.event.type} ${d.event.schema}.${d.event.table} -> ${d.webhook.url} ${d.ok ? d.status : 'FAILED ' + (d.error ?? '')}`)
   )
   if (config.webhooks?.length) await webhooks.start(config.webhooks)
 
   const cron = new CronService(db)
   cron.start()
-  const admin = new AdminApi(db)
+  const admin = new AdminApi(db, logs)
 
   const fnMap =
     config.functions instanceof Map
@@ -240,8 +253,24 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
     )
   }
 
+  // request logging for the Logs pane (skip health checks and the log-polling
+  // endpoint itself to avoid noise / self-reference)
+  const loggedFetch = async (req: Request): Promise<Response> => {
+    const res = await handle(req)
+    try {
+      const p = new URL(req.url).pathname
+      if (p !== '/health' && p !== '/' && p !== '/admin/v1/logs') {
+        const level = res.status >= 500 ? 'error' : res.status >= 400 ? 'warn' : 'info'
+        logs.push(`${req.method} ${p} → ${res.status}`, level)
+      }
+    } catch {
+      // never let logging break a response
+    }
+    return res
+  }
+
   return {
-    fetch: handle,
+    fetch: loggedFetch,
     db,
     realtime,
     functions,
@@ -250,6 +279,7 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
     anonKey,
     serviceRoleKey,
     jwtSecret,
+    logs,
     inbox,
     migrate: (migrations, seedSql) => db.runMigrations(migrations, seedSql),
     close: async () => {

@@ -58,6 +58,12 @@ export interface Stats {
 }
 
 // ── admin ──
+export interface LogEntry {
+  ts: string
+  level: 'info' | 'warn' | 'error'
+  msg: string
+}
+
 export const api = {
   ping: () => req('/admin/v1/stats').then(jsonOrThrow) as Promise<Stats>,
   stats: () => req('/admin/v1/stats').then(jsonOrThrow) as Promise<Stats>,
@@ -79,6 +85,8 @@ export const api = {
   },
   functions: () => req('/admin/v1/functions').then(jsonOrThrow).then((r) => r.functions as any[]),
   triggers: () => req('/admin/v1/triggers').then(jsonOrThrow).then((r) => r.triggers as any[]),
+  logs: () => req('/admin/v1/logs').then(jsonOrThrow).then((r) => r.logs as LogEntry[]),
+  clearLogs: () => req('/admin/v1/logs', { method: 'DELETE' }).then(jsonOrThrow),
   sql: (query: string) =>
     req('/admin/v1/sql', { method: 'POST', body: JSON.stringify({ query }) }).then(async (res) => {
       const body = await res.json()
