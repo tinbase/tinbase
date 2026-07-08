@@ -49,7 +49,7 @@ Until the harness exists, coverage numbers below are our own honest estimates.
 | Edge Functions | ~85% | remote-import fetch needs network at first run |
 | Studio | ~80% | table/column designer UI |
 | Type generation | ~85% | composite-type args, multi-schema output |
-| Extensions (pgvector, pg_cron, pg_net, pgmq) | partial/0% | vector search, cron, webhooks, queues |
+| Extensions (pgvector, pg_cron, pg_net, pgmq) | cron, pg_net, pgmq, webhooks emulated; pgvector 0% | pgvector vector search (needs a bundled binary) |
 
 Typical CRUD + auth + storage + realtime app: **~90%** already works.
 
@@ -89,9 +89,10 @@ Finding: pgvector/pg_net/pg_cron/pgmq are third-party C extensions NOT present
 in the theseus native Postgres binaries or this PGlite build. Two tracks:
 - [ ] Bundle extension binaries (pgvector first) for native across platforms +
       a PGlite build that includes them — infra project, needed for true pgvector
-- [ ] tinbase-native automation that needs no C extension, works on both engines:
-      - [x] database webhooks (CDC → HTTP) — replaces pg_net's http_post pattern
-      - [x] scheduled jobs (in-process cron running SQL) — replaces pg_cron
+- [x] tinbase-native automation that needs no C extension, works on both engines:
+      - [x] database webhooks (CDC → HTTP) — the Supabase webhook payload shape
+      - [x] scheduled jobs (in-process cron running SQL) — replaces pg_cron; matches in UTC
+      - [x] HTTP from SQL (net.http_post/get/delete → in-process sender) — pg_net emulation, so a cron job or trigger can call an Edge Function / any URL
       - [x] table-backed queue helpers (pgmq.* subset) — replaces pgmq
 - Target: AI + automation apps run unchanged
 
