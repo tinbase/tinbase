@@ -73,4 +73,19 @@ describe('edge function secrets', () => {
     expect(await (await invoke(backend, 'viactx')).text()).toBe('s3cr3t')
     expect(await (await invoke(backend, 'viadeno')).text()).toBe('s3cr3t')
   })
+
+  it('does not leak host process.env through Deno.env', async () => {
+    process.env.TINBASE_HOST_SECRET = 'do-not-leak'
+    const backend = await createBackend({
+      functions: {
+        leak: () => new Response((globalThis as any).Deno?.env.get('TINBASE_HOST_SECRET') ?? 'not-visible'),
+      },
+    })
+    backends.push(backend)
+    try {
+      expect(await (await invoke(backend, 'leak')).text()).toBe('not-visible')
+    } finally {
+      delete process.env.TINBASE_HOST_SECRET
+    }
+  })
 })
