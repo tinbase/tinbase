@@ -89,7 +89,11 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
     baseLog(m)
   }
 
-  const db = await Database.create(config.engine ?? config.dataDir)
+  // Vault encryption key: use the configured value, else derive one from the
+  // JWT secret so vault secrets are encrypted at rest out of the box (better
+  // than the old plaintext store). Set a dedicated vaultKey in production.
+  const vaultKey = config.vaultKey ?? `tinbase-vault:${jwtSecret}`
+  const db = await Database.create(config.engine ?? config.dataDir, { vaultKey })
   if (config.migrations?.length || config.seedSql) {
     const applied = await db.runMigrations(config.migrations ?? [], config.seedSql)
     if (applied.length > 0) log(`applied migrations: ${applied.join(', ')}`)

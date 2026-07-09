@@ -100,6 +100,9 @@ describe('migration compatibility', () => {
       await backend.db.query(`select vault.create_secret('s3cr3t', 'apikey', 'my key')`)
       const r = await backend.db.query(`select decrypted_secret from vault.decrypted_secrets where name = 'apikey'`)
       expect((r.rows[0] as { decrypted_secret: string }).decrypted_secret).toBe('s3cr3t')
+      // the stored column must be ciphertext, not the plaintext (encryption at rest)
+      const raw = await backend.db.query(`select secret from vault.secrets where name = 'apikey'`)
+      expect((raw.rows[0] as { secret: string }).secret).not.toContain('s3cr3t')
     },
     T
   )

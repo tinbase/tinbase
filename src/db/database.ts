@@ -76,7 +76,7 @@ export class Database {
   private constructor(public engine: DbEngine) {}
 
   /** Create a Database on PGlite (default) or any custom DbEngine. */
-  static async create(dataDirOrEngine?: string | DbEngine): Promise<Database> {
+  static async create(dataDirOrEngine?: string | DbEngine, opts?: { vaultKey?: string }): Promise<Database> {
     const engine =
       dataDirOrEngine && typeof dataDirOrEngine === 'object'
         ? dataDirOrEngine
@@ -93,6 +93,11 @@ export class Database {
       await engine.exec(NET_SQL)
       await engine.exec(EXT_COMPAT_SQL)
       await engine.exec(VAULT_SQL)
+      // Vault encryption key, held only in this session GUC (never in a table).
+      // Set at the session level so it survives migrations' search_path resets.
+      if (opts?.vaultKey) {
+        await engine.query(`select set_config('app.settings.vault_key', $1, false)`, [opts.vaultKey])
+      }
     }
     return new Database(engine)
   }

@@ -19,6 +19,12 @@ export interface BackendConfig {
   engine?: import('./db/engine.js').DbEngine
   /** Secret used to sign/verify every JWT. Defaults to the Supabase local-dev secret. */
   jwtSecret?: string
+  /**
+   * Key used to encrypt Vault secrets at rest (pgcrypto). Held only in a session
+   * GUC, never stored in the database. Defaults to a value derived from
+   * jwtSecret; set a dedicated key in production.
+   */
+  vaultKey?: string
   /** External URL of this backend, used as JWT issuer. */
   siteUrl?: string
   /** Access token lifetime in seconds (default 3600). */

@@ -292,11 +292,15 @@ $ensure_moddatetime$;
 `
 
 // Supabase Vault emulation. Real Vault (supabase_vault + pgsodium) encrypts
-// secrets at rest; we can't ship those C extensions, so this is a dev-only
-// plaintext stand-in with the same surface: vault.secrets, the
-// vault.decrypted_secrets view, and vault.create_secret / update_secret. Enough
-// for migrations and app code that store/read secrets by name to work locally.
-// NOT for production — secrets are stored in cleartext.
+// secrets at rest; we can't ship those C extensions. This stand-in keeps the
+// same surface (vault.secrets, vault.decrypted_secrets, vault.create_secret /
+// update_secret) but stores the secret encrypted with pgcrypto's authenticated
+// symmetric encryption (pgp_sym_encrypt) under a key held in the GUC
+// app.settings.vault_key — set at boot, never stored in the database.
+//
+// The stored `secret` column holds ciphertext; decrypted_secrets decrypts on
+// read. If pgcrypto or the key is unavailable the functions raise, rather than
+// silently falling back to cleartext.
 export const VAULT_SQL = `
 create schema if not exists vault;
 grant usage on schema vault to service_role;
@@ -313,8 +317,32 @@ create table if not exists vault.secrets (
 );
 grant select, insert, update, delete on vault.secrets to service_role;
 
+-- the encryption key, from the GUC set at boot (empty string if unset)
+create or replace function vault._key() returns text
+language sql stable as $vault$
+  select coalesce(nullif(current_setting('app.settings.vault_key', true), ''), '')
+$vault$;
+
+create or replace function vault._encrypt(plain text) returns text
+language plpgsql security definer set search_path = vault, extensions, pg_catalog, public as $vault$
+declare k text := vault._key();
+begin
+  if plain is null then return null; end if;
+  if k = '' then raise exception 'vault key is not configured'; end if;
+  return encode(pgp_sym_encrypt(plain, k), 'base64');
+end $vault$;
+
+create or replace function vault._decrypt(cipher text) returns text
+language plpgsql security definer set search_path = vault, extensions, pg_catalog, public as $vault$
+declare k text := vault._key();
+begin
+  if cipher is null then return null; end if;
+  if k = '' then raise exception 'vault key is not configured'; end if;
+  return pgp_sym_decrypt(decode(cipher, 'base64'), k);
+end $vault$;
+
 create or replace view vault.decrypted_secrets as
-  select id, name, description, secret, secret as decrypted_secret, key_id, nonce, created_at, updated_at
+  select id, name, description, secret, vault._decrypt(secret) as decrypted_secret, key_id, nonce, created_at, updated_at
   from vault.secrets;
 grant select on vault.decrypted_secrets to service_role;
 
@@ -323,7 +351,7 @@ returns uuid language plpgsql security definer set search_path = vault, pg_catal
 declare rec_id uuid;
 begin
   insert into vault.secrets (name, description, secret, key_id)
-  values (new_name, coalesce(new_description, ''), new_secret, new_key_id)
+  values (new_name, coalesce(new_description, ''), vault._encrypt(new_secret), new_key_id)
   returning id into rec_id;
   return rec_id;
 end $vault$;
@@ -332,7 +360,7 @@ create or replace function vault.update_secret(secret_id uuid, new_secret text d
 returns void language plpgsql security definer set search_path = vault, pg_catalog, public as $vault$
 begin
   update vault.secrets set
-    secret = coalesce(new_secret, secret),
+    secret = case when new_secret is null then secret else vault._encrypt(new_secret) end,
     name = coalesce(new_name, name),
     description = coalesce(new_description, description),
     key_id = coalesce(new_key_id, key_id),
