@@ -61,6 +61,17 @@ describe('MFA (TOTP)', () => {
     expect(aal.data!.currentLevel).toBe('aal2')
   })
 
+  it('rejects replaying an already-verified challenge', async () => {
+    const { data: ch } = await env.supabase.auth.mfa.challenge({ factorId })
+    const code = await totpNow(secret)
+    // first verify succeeds
+    const first = await env.supabase.auth.mfa.verify({ factorId, challengeId: ch!.id, code })
+    expect(first.error).toBeNull()
+    // replaying the same challenge + code must fail (single-use)
+    const replay = await env.supabase.auth.mfa.verify({ factorId, challengeId: ch!.id, code })
+    expect(replay.error).not.toBeNull()
+  })
+
   it('lists the factor as a verified totp factor', async () => {
     const { data, error } = await env.supabase.auth.mfa.listFactors()
     expect(error).toBeNull()

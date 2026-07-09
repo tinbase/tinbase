@@ -539,13 +539,17 @@ export class AuthHandler {
     const factor = fr.rows[0] as { id: string; secret: string; status: string } | undefined
     if (!factor) return authError(404, 'mfa_factor_not_found', 'MFA factor not found')
     const cr = await this.db.query(
-      `select id, expires_at from auth.mfa_challenges where id = $1 and factor_id = $2`,
+      `select id, expires_at, verified_at from auth.mfa_challenges where id = $1 and factor_id = $2`,
       [body.challenge_id ?? '', factorId]
     )
-    const challenge = cr.rows[0] as { id: string; expires_at: string | Date } | undefined
+    const challenge = cr.rows[0] as { id: string; expires_at: string | Date; verified_at: string | Date | null } | undefined
     if (!challenge) return authError(404, 'mfa_challenge_not_found', 'MFA challenge not found')
     if (new Date(challenge.expires_at).getTime() < Date.now()) {
       return authError(422, 'mfa_challenge_expired', 'MFA challenge has expired, verify against another one')
+    }
+    // a challenge is single-use: once verified it cannot be replayed
+    if (challenge.verified_at) {
+      return authError(422, 'mfa_verification_failed', 'This challenge has already been verified')
     }
     if (!(await verifyTotp(factor.secret, body.code ?? ''))) {
       return authError(422, 'mfa_verification_failed', 'Invalid TOTP code entered')
