@@ -48,8 +48,6 @@ function iso(v: Date | string | null): string | null {
   return v instanceof Date ? v.toISOString() : new Date(v).toISOString()
 }
 
-const SERVICE_CTX: RequestContext = { role: 'service_role', claims: { role: 'service_role' } }
-
 export class StorageHandler {
   constructor(
     private db: Database,
@@ -477,7 +475,7 @@ export class StorageHandler {
       q(`select id from storage.objects where bucket_id = $1 and name = $2`, [bucketId, key])
     )
     if (res.rows.length === 0) return storageError(404, 'not_found', 'Object not found')
-    const token = await this.makeSignToken(bucketId, key, body.expiresIn ?? 3600)
+    const token = await this.makeSignToken('download', bucketId, key, body.expiresIn ?? 3600)
     return json(200, { signedURL: `/object/sign/${bucketId}/${encPath(key)}?token=${token}` })
   }
 
@@ -491,7 +489,7 @@ export class StorageHandler {
       if (res.rows.length === 0) {
         out.push({ path, error: 'Object not found', signedURL: null })
       } else {
-        const token = await this.makeSignToken(bucketId, path, body.expiresIn ?? 3600)
+        const token = await this.makeSignToken('download', bucketId, path, body.expiresIn ?? 3600)
         out.push({ path, error: null, signedURL: `/object/sign/${bucketId}/${encPath(path)}?token=${token}` })
       }
     }
@@ -501,7 +499,7 @@ export class StorageHandler {
   private async redeemSignedUrl(url: URL, bucketId: string, key: string): Promise<Response> {
     const token = url.searchParams.get('token') ?? ''
     const claims = await verifyJwt(token, this.config.jwtSecret)
-    if (!claims || claims.url !== `${bucketId}/${key}`) {
+    if (!claims || claims.url !== `${bucketId}/${key}` || claims.type !== 'download') {
       return storageError(400, 'InvalidJWT', 'The provided token is invalid or expired')
     }
     const res = await this.db.query(`select * from storage.objects where bucket_id = $1 and name = $2`, [
@@ -516,7 +514,8 @@ export class StorageHandler {
   private async signUploadUrl(ctx: RequestContext, bucketId: string, key: string): Promise<Response> {
     const bucket = await this.loadBucket(bucketId)
     if (!bucket) return storageError(404, 'Bucket not found', 'Bucket not found')
-    const token = await this.makeSignToken(bucketId, key, 7200, ctx.claims?.sub)
+    const owner = typeof ctx.claims?.sub === 'string' ? ctx.claims.sub : undefined
+    const token = await this.makeSignToken('upload', bucketId, key, 7200, owner)
     return json(200, {
       url: `/object/upload/sign/${bucketId}/${encPath(key)}?token=${token}`,
       token,
@@ -526,15 +525,27 @@ export class StorageHandler {
   private async redeemSignedUpload(req: Request, url: URL, bucketId: string, key: string): Promise<Response> {
     const token = url.searchParams.get('token') ?? ''
     const claims = await verifyJwt(token, this.config.jwtSecret)
-    if (!claims || claims.url !== `${bucketId}/${key}`) {
+    if (!claims || claims.url !== `${bucketId}/${key}` || claims.type !== 'upload') {
       return storageError(400, 'InvalidJWT', 'The provided token is invalid or expired')
     }
-    return this.upload(req, SERVICE_CTX, bucketId, key)
+    // redeem as the token's owner (authenticated user) so RLS still governs the
+    // write, rather than the RLS-bypassing service role.
+    const owner = typeof claims.owner === 'string' ? claims.owner : undefined
+    const uploadCtx: RequestContext = owner
+      ? { role: 'authenticated', claims: { role: 'authenticated', sub: owner } }
+      : { role: 'anon', claims: { role: 'anon' } }
+    return this.upload(req, uploadCtx, bucketId, key)
   }
 
-  private makeSignToken(bucketId: string, key: string, expiresIn: number, owner?: string): Promise<string> {
+  private makeSignToken(
+    type: 'download' | 'upload',
+    bucketId: string,
+    key: string,
+    expiresIn: number,
+    owner?: string
+  ): Promise<string> {
     const now = Math.floor(Date.now() / 1000)
-    return signJwt({ url: `${bucketId}/${key}`, iat: now, exp: now + expiresIn, owner }, this.config.jwtSecret)
+    return signJwt({ type, url: `${bucketId}/${key}`, iat: now, exp: now + expiresIn, owner }, this.config.jwtSecret)
   }
 }
 
