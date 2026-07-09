@@ -81,6 +81,13 @@ export function acceptWebSocket(req: IncomingMessage, socket: Duplex, head: Buff
       if (!frame) return
       buffer = buffer.subarray(frame.frameLength)
 
+      // RFC 6455 §5.1: every frame from the client MUST be masked; fail the
+      // connection with a protocol error (1002) otherwise.
+      if (!frame.masked) {
+        conn.close(1002, 'unmasked frame')
+        return
+      }
+
       switch (frame.opcode) {
         case 0x0: // continuation
           fragments.push(frame.payload)
@@ -120,11 +127,12 @@ export function acceptWebSocket(req: IncomingMessage, socket: Duplex, head: Buff
 interface Frame {
   fin: boolean
   opcode: number
+  masked: boolean
   payload: Buffer
   frameLength: number
 }
 
-function decodeFrame(buf: Buffer): Frame | null {
+export function decodeFrame(buf: Buffer): Frame | null {
   if (buf.length < 2) return null
   const fin = (buf[0] & 0x80) !== 0
   const opcode = buf[0] & 0x0f
@@ -156,7 +164,7 @@ function decodeFrame(buf: Buffer): Frame | null {
   if (maskKey) {
     for (let i = 0; i < payload.length; i++) payload[i] ^= maskKey[i % 4]
   }
-  return { fin, opcode, payload, frameLength: offset + payloadLength }
+  return { fin, opcode, masked, payload, frameLength: offset + payloadLength }
 }
 
 function encodeFrame(opcode: number, payload: Buffer): Buffer {
