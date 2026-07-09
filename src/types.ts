@@ -47,6 +47,12 @@ export interface BackendConfig {
   netFetch?: typeof fetch
   /** Print startup/debug logs. */
   log?: (msg: string) => void
+  /**
+   * Log the full body of auth emails (OTP codes, magic links) to the server log.
+   * Off by default so secrets don't land in log files; the /inbox dev UI still
+   * shows the full body regardless. Enable only for local debugging.
+   */
+  logMailBody?: boolean
 }
 
 export interface MailMessage {

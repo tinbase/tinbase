@@ -105,11 +105,21 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
 
   const rest = new RestHandler(db)
   // With no custom mailer, capture auth emails in an in-memory inbox (viewable
-  // at /inbox) and still log them. A provided mailer takes over and no inbox is
-  // mounted.
+  // at /inbox) and log a metadata-only line. A provided mailer takes over and no
+  // inbox is mounted.
+  //
+  // The server log records only the recipient and subject — never the body,
+  // which carries OTP codes and magic links. Set logMailBody: true to also log
+  // the full body for local debugging (the /inbox UI always shows it in full).
   const inbox = config.mailer
     ? null
-    : new InboxMailer((msg) => log(`[mail] to=${msg.to} subject="${msg.subject}"\n${msg.text}`))
+    : new InboxMailer((msg) =>
+        log(
+          config.logMailBody
+            ? `[mail] to=${msg.to} subject="${msg.subject}"\n${msg.text}`
+            : `[mail] to=${msg.to} subject="${msg.subject}"`
+        )
+      )
   const mailer: Mailer = config.mailer ?? inbox!
   const auth = new AuthHandler(db, {
     jwtSecret,

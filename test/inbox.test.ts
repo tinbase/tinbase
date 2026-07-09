@@ -36,6 +36,22 @@ describe('local email inbox', () => {
     expect(msgs[0].link).toContain('/auth/v1/verify?token=')
   })
 
+  it('does not log the OTP code or magic link in the server log', async () => {
+    env.backend.inbox!.clear()
+    const email = `redact-${Date.now()}@example.com`
+    await env.supabase.auth.signInWithOtp({ email })
+
+    const code = env.backend.inbox!.list()[0].code!
+    const link = env.backend.inbox!.list()[0].link!
+    const mailLogs = env.backend.logs.list(500).filter((l) => l.msg.startsWith('[mail]'))
+    expect(mailLogs.length).toBeGreaterThanOrEqual(1)
+    // metadata is logged, but never the secret body
+    const joined = mailLogs.map((l) => l.msg).join('\n')
+    expect(joined).toContain(email)
+    expect(joined).not.toContain(code)
+    expect(joined).not.toContain(link)
+  })
+
   it('serves the captured message over the JSON API', async () => {
     const res = await env.backend.fetch(new Request('http://localhost:54321/inbox/api/messages'))
     expect(res.status).toBe(200)
