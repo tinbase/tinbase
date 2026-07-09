@@ -135,6 +135,38 @@ describe('auth', () => {
     expect(JSON.stringify(body)).not.toContain('encrypted_password')
   })
 
+  it('erases a user and cascades their auth rows (GDPR erasure)', async () => {
+    const created = await env.admin.auth.admin.createUser({
+      email: 'erase-me@example.com',
+      password: 'password123',
+      email_confirm: true,
+    })
+    const id = created.data.user!.id
+
+    const res = await env.backend.fetch(
+      new Request(`http://localhost:54321/auth/v1/admin/users/${id}`, {
+        method: 'DELETE',
+        headers: { apikey: env.backend.serviceRoleKey, authorization: `Bearer ${env.backend.serviceRoleKey}` },
+      })
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.erased).toBe(true)
+
+    // the user is gone
+    const gone = await env.admin.auth.admin.getUserById(id)
+    expect(gone.data.user).toBeNull()
+
+    // erasing a non-existent user returns 404
+    const missing = await env.backend.fetch(
+      new Request(`http://localhost:54321/auth/v1/admin/users/${id}`, {
+        method: 'DELETE',
+        headers: { apikey: env.backend.serviceRoleKey, authorization: `Bearer ${env.backend.serviceRoleKey}` },
+      })
+    )
+    expect(missing.status).toBe(404)
+  })
+
   it('export rejects the anon key', async () => {
     const res = await env.backend.fetch(
       new Request(`http://localhost:54321/auth/v1/admin/users/00000000-0000-0000-0000-000000000000/export`, {

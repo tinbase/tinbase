@@ -460,8 +460,7 @@ export class AuthHandler {
       return json(200, this.userJson(res.rows[0] as UserRow))
     }
     if (idMatch && method === 'DELETE') {
-      await this.db.query(`delete from auth.users where id = $1`, [idMatch[1]])
-      return json(200, {})
+      return await this.eraseUser(idMatch[1])
     }
     return authError(404, 'not_found', `unknown admin endpoint`)
   }
@@ -513,6 +512,34 @@ export class AuthHandler {
       identities: identities.rows,
       sessions: sessions.rows,
       mfa_factors: factors.rows,
+    })
+  }
+
+  /**
+   * Erase a user (GDPR right to erasure). Deletes the user row; auth.identities,
+   * refresh_tokens, one_time_tokens, flow_state, and mfa_factors/challenges are
+   * removed by their ON DELETE CASCADE foreign keys. Returns a 404 if the user
+   * doesn't exist and a summary of what was erased.
+   *
+   * Note: storage.objects.owner has no FK to auth.users, so object rows/bytes
+   * owned by the user are not removed here — see COMPLIANCE.md for the
+   * storage-erasure step the operator must run.
+   */
+  private async eraseUser(userId: string): Promise<Response> {
+    const before = await this.db.query<{ identities: number; sessions: number; factors: number }>(
+      `select
+         (select count(*) from auth.identities where user_id = $1)::int as identities,
+         (select count(*) from auth.refresh_tokens where user_id = $1)::int as sessions,
+         (select count(*) from auth.mfa_factors where user_id = $1)::int as factors`,
+      [userId]
+    )
+    const del = await this.db.query(`delete from auth.users where id = $1 returning id`, [userId])
+    if (del.rows.length === 0) return authError(404, 'user_not_found', 'User not found')
+    const c = before.rows[0]
+    return json(200, {
+      erased: true,
+      user_id: userId,
+      cascaded: { identities: c.identities, sessions: c.sessions, mfa_factors: c.factors },
     })
   }
 
