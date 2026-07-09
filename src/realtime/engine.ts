@@ -536,6 +536,18 @@ export class RealtimeEngine {
 
         if (!(await this.canSee(channel.ctx, event, rlsEnabled, pk))) continue
 
+        // A DELETE on an RLS table can't be re-checked per row (the row is
+        // gone), so we can't confirm this subscriber was allowed to see it.
+        // Non-service subscribers therefore get only the primary key of the
+        // deleted row, never the full old_record — otherwise every other
+        // tenant's deleted-row contents would leak. (service_role/bypassrls and
+        // non-RLS tables still get the full old_record.)
+        const redactOld =
+          event.type === 'DELETE' && rlsEnabled && channel.ctx.role !== 'service_role'
+        const oldRecord = redactOld
+          ? pkOnly(event.old_record ?? {}, pk)
+          : event.old_record ?? {}
+
         this.send(conn, {
           topic: channel.topic,
           event: 'postgres_changes',
@@ -549,7 +561,7 @@ export class RealtimeEngine {
               type: event.type,
               columns,
               record: event.record ?? {},
-              old_record: event.old_record ?? {},
+              old_record: oldRecord,
               errors: event.errors ?? null,
             },
           },
@@ -603,6 +615,13 @@ export class RealtimeEngine {
     }
     return true
   }
+}
+
+/** Project a row down to just its primary-key columns (empty pk → empty row). */
+function pkOnly(row: Record<string, unknown>, pk: string[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const c of pk) if (c in row) out[c] = row[c]
+  return out
 }
 
 /** Evaluate a realtime filter string ("col=eq.value") against a row. */

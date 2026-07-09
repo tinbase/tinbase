@@ -91,6 +91,32 @@ describe('realtime RLS filtering', () => {
     await alice.auth.signOut()
   })
 
+  it('DELETE on an RLS table does not leak old_record columns to other subscribers', async () => {
+    const alice = mkClient()
+    const bob = mkClient()
+    await alice.auth.signUp({ email: `ad-${Date.now()}@x.com`, password: 'password123' })
+    await bob.auth.signUp({ email: `bd-${Date.now()}@x.com`, password: 'password123' })
+
+    const bobEvents: any[] = []
+    const bobCh = bob.channel('notes-del-bob')
+    bobCh.on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'notes' }, (p) => bobEvents.push(p.old))
+    await subscribed(bobCh)
+
+    const ins = await alice.from('notes').insert({ content: 'alice secret to delete' }).select().single()
+    expect(ins.error).toBeNull()
+    await alice.from('notes').delete().eq('id', ins.data!.id)
+
+    await new Promise((r) => setTimeout(r, 700))
+    // Bob can't verify he was allowed to see the deleted row, so the payload
+    // must carry only the primary key — never the secret content column.
+    for (const old of bobEvents) {
+      expect(old.content).toBeUndefined()
+    }
+
+    await alice.auth.signOut()
+    await bob.auth.signOut()
+  })
+
   it('non-RLS tables still broadcast to everyone (anon included)', async () => {
     const anon = mkClient()
     const events: any[] = []
