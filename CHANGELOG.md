@@ -4,6 +4,20 @@ All notable changes to tinbase are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and versions follow semver
 (pre-1.0, minor bumps may include breaking changes).
 
+## [0.7.1] — 2026-07-09
+
+Docs/metadata accuracy pass after 0.7.0.
+
+### Changed
+- **`tinbase --help`** no longer describes the backend as "on PGlite" — native
+  embedded Postgres is the default now. The header reads "Supabase-compatible
+  backend, no Docker (embedded Postgres / PGlite)", and the npm `description`
+  matches.
+- **README:** the single-binary size is stated as **~58 MB** (measured), and the
+  benchmark "install size" is clarified as **92 MB = the 58 MB executable + the
+  Postgres binaries fetched on first run** (they were conflated). Test-count
+  wording now cites the verifiable full suite (**168 tests**, both engines).
+
 ## [0.7.0] — 2026-07-09
 
 Runs real Supabase projects. The headline is that a full production schema —
@@ -133,6 +147,7 @@ Earlier tagged previews: the core Supabase-compatible surface — REST (PostgRES
 grammar), Auth (GoTrue), Storage, Realtime, RLS, migrations, and the single-file
 binary — on the PGlite (wasm) and native Postgres engines.
 
+[0.7.1]: https://github.com/tinbase/tinbase/releases/tag/v0.7.1
 [0.7.0]: https://github.com/tinbase/tinbase/releases/tag/v0.7.0
 [0.6.1]: https://github.com/tinbase/tinbase/releases/tag/v0.6.1
 [0.6.0]: https://github.com/tinbase/tinbase/releases/tag/v0.6.0
