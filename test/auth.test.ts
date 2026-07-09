@@ -110,3 +110,42 @@ describe('auth', () => {
     expect(error).not.toBeNull()
   })
 })
+
+describe('auth OTP brute-force protection', () => {
+  const key = env => env.backend.anonKey
+  const authFetch = (env: TestEnv, path: string, body: unknown) =>
+    env.backend.fetch(
+      new Request(`http://localhost:54321/auth/v1/${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', apikey: env.backend.anonKey },
+        body: JSON.stringify(body),
+      })
+    )
+
+  it('locks out an OTP after too many wrong guesses', async () => {
+    env.backend.inbox!.clear()
+    const email = `otp-brute-${Date.now()}@example.com`
+    await authFetch(env, 'otp', { email })
+    const realCode = env.backend.inbox!.list()[0].code!
+
+    // 5 wrong guesses trip the lockout
+    for (let i = 0; i < 5; i++) {
+      const r = await authFetch(env, 'verify', { type: 'email', email, token: '000000' })
+      expect(r.status).toBe(403)
+    }
+    // even the correct code is now rejected — the token was burned
+    const good = await authFetch(env, 'verify', { type: 'email', email, token: realCode })
+    expect(good.status).toBe(403)
+  })
+
+  it('does not let a login OTP redeem as a recovery session', async () => {
+    env.backend.inbox!.clear()
+    const email = `otp-type-${Date.now()}@example.com`
+    await authFetch(env, 'otp', { email })
+    const code = env.backend.inbox!.list()[0].code!
+
+    // the same 6-digit code must not be accepted as a recovery token
+    const asRecovery = await authFetch(env, 'verify', { type: 'recovery', email, token: code })
+    expect(asRecovery.status).toBe(403)
+  })
+})

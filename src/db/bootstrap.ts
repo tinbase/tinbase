@@ -51,6 +51,7 @@ create table if not exists auth.one_time_tokens (
   email text not null,
   token_type text not null,
   token text not null,
+  attempts int not null default 0,
   created_at timestamptz default now(),
   expires_at timestamptz not null
 );
@@ -272,6 +273,7 @@ create table if not exists auth.one_time_tokens (
   email text not null,
   token_type text not null, -- otp | magiclink | recovery
   token text not null,
+  attempts int not null default 0,
   created_at timestamptz default now(),
   expires_at timestamptz not null
 );

@@ -316,16 +316,37 @@ export class AuthHandler {
     return this.issueToken(body.email, 'recovery', false)
   }
 
+  /** Max wrong guesses for a one-time code before its tokens are invalidated. */
+  private static readonly MAX_OTP_ATTEMPTS = 5
+
   private async redeem(token: string, types: string[], email?: string): Promise<UserRow | null> {
+    const normalizedEmail = email?.toLowerCase().trim() ?? null
     const res = await this.db.query(
       `delete from auth.one_time_tokens
        where token = $1 and token_type = any($2::text[])
          and ($3::text is null or email = $3) and expires_at > now()
+         and attempts < $4
        returning user_id, email`,
-      [token, `{${types.join(',')}}`, email?.toLowerCase().trim() ?? null]
+      [token, `{${types.join(',')}}`, normalizedEmail, AuthHandler.MAX_OTP_ATTEMPTS]
     )
     const row = res.rows[0] as { user_id: string; email: string } | undefined
-    if (!row) return null
+    if (!row) {
+      // Wrong/expired code: count the failed guess against the live tokens for
+      // this email, and burn them once the attempt cap is hit (brute-force
+      // lockout for the 6-digit OTP). Requires the email to scope the counter.
+      if (normalizedEmail) {
+        await this.db.query(
+          `update auth.one_time_tokens set attempts = attempts + 1
+           where email = $1 and token_type = any($2::text[]) and expires_at > now()`,
+          [normalizedEmail, `{${types.join(',')}}`]
+        )
+        await this.db.query(
+          `delete from auth.one_time_tokens where email = $1 and attempts >= $2`,
+          [normalizedEmail, AuthHandler.MAX_OTP_ATTEMPTS]
+        )
+      }
+      return null
+    }
     await this.db.query(`delete from auth.one_time_tokens where email = $1`, [row.email])
     const ures = await this.db.query(
       `update auth.users set email_confirmed_at = coalesce(email_confirmed_at, now()), last_sign_in_at = now()
@@ -338,8 +359,11 @@ export class AuthHandler {
   private async verifyToken(req: Request): Promise<Response> {
     const body = (await req.json().catch(() => ({}))) as { type?: string; email?: string; token?: string }
     if (!body.token) return authError(400, 'validation_failed', 'token is required')
+    // A recovery (password-reset) token must be redeemed with type=recovery
+    // explicitly — never fold it into the default set, or a guessed login OTP
+    // could mint a recovery session.
     const types =
-      body.type === 'recovery' ? ['recovery'] : body.type === 'magiclink' ? ['magiclink'] : ['otp', 'magiclink', 'recovery']
+      body.type === 'recovery' ? ['recovery'] : body.type === 'magiclink' ? ['magiclink'] : ['otp', 'magiclink']
     const user = await this.redeem(body.token, types, body.email)
     if (!user) return authError(403, 'otp_expired', 'Token has expired or is invalid')
     return json(200, await this.sessionFor(user))
