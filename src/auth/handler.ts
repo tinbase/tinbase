@@ -389,6 +389,11 @@ export class AuthHandler {
       return authError(403, 'insufficient_permissions', 'Admin endpoints require the service_role key')
     }
     const idMatch = path.match(/^admin\/users\/([0-9a-f-]{36})$/)
+    const exportMatch = path.match(/^admin\/users\/([0-9a-f-]{36})\/export$/)
+
+    if (exportMatch && method === 'GET') {
+      return await this.exportUser(exportMatch[1])
+    }
 
     if (path === 'admin/users' && method === 'GET') {
       const res = await this.db.query(`select * from auth.users order by created_at desc limit 1000`)
@@ -459,6 +464,56 @@ export class AuthHandler {
       return json(200, {})
     }
     return authError(404, 'not_found', `unknown admin endpoint`)
+  }
+
+  // ── GDPR: data-subject access (export) ────────────────────────────────
+
+  /**
+   * Export everything held about one user across the auth schema, for a GDPR
+   * right-of-access / portability request. Credentials (password hash, MFA
+   * secrets, raw token values) are deliberately omitted — they are not personal
+   * data to hand back and exporting them would leak secrets.
+   */
+  private async exportUser(userId: string): Promise<Response> {
+    const ures = await this.db.query(`select * from auth.users where id = $1`, [userId])
+    if (ures.rows.length === 0) return authError(404, 'user_not_found', 'User not found')
+    const user = ures.rows[0] as UserRow & Record<string, unknown>
+
+    const identities = await this.db.query(
+      `select id, provider, provider_id, identity_data, last_sign_in_at, created_at, updated_at
+       from auth.identities where user_id = $1`,
+      [userId]
+    )
+    const sessions = await this.db.query(
+      `select id, parent, session_id, revoked, created_at, updated_at
+       from auth.refresh_tokens where user_id = $1`,
+      [userId]
+    )
+    const factors = await this.db.query(
+      `select id, friendly_name, factor_type, status, created_at, updated_at
+       from auth.mfa_factors where user_id = $1`,
+      [userId]
+    )
+
+    // strip credential/token columns from the raw record before returning it
+    const SENSITIVE = [
+      'encrypted_password',
+      'confirmation_token',
+      'recovery_token',
+      'email_change_token_new',
+      'email_change_token_current',
+      'phone_change_token',
+      'reauthentication_token',
+    ]
+    const userSafe = Object.fromEntries(Object.entries(user).filter(([k]) => !SENSITIVE.includes(k)))
+    return json(200, {
+      exported_at: new Date().toISOString(),
+      user: this.userJson(user),
+      user_record: userSafe,
+      identities: identities.rows,
+      sessions: sessions.rows,
+      mfa_factors: factors.rows,
+    })
   }
 
   // ── MFA (TOTP) ────────────────────────────────────────────────────────

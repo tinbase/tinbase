@@ -109,6 +109,40 @@ describe('auth', () => {
     const { error } = await env.supabase.auth.admin.listUsers()
     expect(error).not.toBeNull()
   })
+
+  it('exports a user\'s data (GDPR access) without leaking credentials', async () => {
+    const created = await env.admin.auth.admin.createUser({
+      email: 'export-me@example.com',
+      password: 'password123',
+      email_confirm: true,
+      user_metadata: { plan: 'pro' },
+    })
+    const id = created.data.user!.id
+
+    const res = await env.backend.fetch(
+      new Request(`http://localhost:54321/auth/v1/admin/users/${id}/export`, {
+        headers: { apikey: env.backend.serviceRoleKey, authorization: `Bearer ${env.backend.serviceRoleKey}` },
+      })
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.user.email).toBe('export-me@example.com')
+    expect(body.user.user_metadata).toEqual({ plan: 'pro' })
+    expect(Array.isArray(body.identities)).toBe(true)
+    expect(Array.isArray(body.sessions)).toBe(true)
+    expect(Array.isArray(body.mfa_factors)).toBe(true)
+    // the password hash must never appear anywhere in the export
+    expect(JSON.stringify(body)).not.toContain('encrypted_password')
+  })
+
+  it('export rejects the anon key', async () => {
+    const res = await env.backend.fetch(
+      new Request(`http://localhost:54321/auth/v1/admin/users/00000000-0000-0000-0000-000000000000/export`, {
+        headers: { apikey: env.backend.anonKey, authorization: `Bearer ${env.backend.anonKey}` },
+      })
+    )
+    expect(res.status).toBe(403)
+  })
 })
 
 describe('auth OTP brute-force protection', () => {
