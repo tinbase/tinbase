@@ -8,7 +8,7 @@ import { createBackend, type TinbaseBackend } from '../src/index.js'
  * is driven by the test simulating the browser landing on the provider and
  * being redirected back to /callback.
  */
-const PROFILE = { id: 'gh_123', login: 'octocat', name: 'The Octocat', email: 'octo@example.com', avatar_url: 'x' }
+const PROFILE = { id: 'gh_123', login: 'octocat', name: 'The Octocat', email: 'octo@example.com', avatar_url: 'x', verified: true }
 let lastAuthorize: URL | null = null
 
 const mockFetch: typeof fetch = async (input, init) => {
@@ -31,7 +31,7 @@ const provider = {
   tokenUrl: 'https://mock/token',
   userInfoUrl: 'https://mock/userinfo',
   scopes: 'read:user',
-  profileMap: (r: any) => ({ id: String(r.id), email: r.email, name: r.name, metadata: { user_name: r.login } }),
+  profileMap: (r: any) => ({ id: String(r.id), email: r.email, emailVerified: r.verified === true, name: r.name, metadata: { user_name: r.login } }),
 }
 
 let backend: TinbaseBackend
@@ -128,5 +128,37 @@ describe('oauth', () => {
     const res = await backend.fetch(new Request(`${BASE}/auth/v1/authorize?provider=nope`, { redirect: 'manual' }))
     expect(res.status).toBe(303)
     expect(res.headers.get('location')).toContain('error=provider_not_enabled')
+  })
+
+  it('does not link an unverified provider email to an existing account', async () => {
+    // pre-existing password account owns victim@example.com
+    const victim = createClient(BASE, backend.anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { fetch: (i, init) => backend.fetch(new Request(i, init)) },
+    })
+    await victim.auth.signUp({ email: 'victim@example.com', password: 'password123' })
+    const before = await backend.db.query<{ id: string }>(
+      `select id from auth.users where email = 'victim@example.com'`
+    )
+    const victimId = before.rows[0].id
+
+    // a NEW provider identity presents the same email (mock profileMap sets no
+    // emailVerified, i.e. unverified). It must NOT hijack the victim's account.
+    PROFILE.id = 'gh_attacker'
+    PROFILE.email = 'victim@example.com'
+    PROFILE.verified = false
+    const authRes = await backend.fetch(
+      new Request(`${BASE}/auth/v1/authorize?provider=github&redirect_to=${encodeURIComponent('http://app.local/x')}`, {
+        redirect: 'manual',
+      })
+    )
+    await driveProvider(authRes.headers.get('location')!)
+
+    // the identity must be linked to a *new* user, never the victim's
+    const ident = await backend.db.query<{ user_id: string }>(
+      `select user_id from auth.identities where provider = 'github' and provider_id = 'gh_attacker'`
+    )
+    expect(ident.rows.length).toBe(1)
+    expect(ident.rows[0].user_id).not.toBe(victimId)
   })
 })
