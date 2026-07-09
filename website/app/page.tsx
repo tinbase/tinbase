@@ -22,7 +22,7 @@ const FEATURES = [
   {
     title: 'One file to deploy',
     icon: 'box',
-    body: 'A single 57 MB executable with no Node, npm, or Docker on the target machine. Postgres binaries (12 MB) auto-download on first run.',
+    body: 'A single 58 MB executable with no Node, npm, or Docker on the target machine. Postgres binaries (12 MB) auto-download on first run.',
   },
   {
     title: 'Your migrations stay portable',
@@ -121,7 +121,7 @@ export default function Home() {
           </Card>
           <div className="mt-6 grid gap-4 sm:grid-cols-3">
             <Card>
-              <div className="text-3xl font-bold text-emerald-400">57 MB</div>
+              <div className="text-3xl font-bold text-emerald-400">58 MB</div>
               <div className="mt-1 text-sm text-zinc-400">single executable, no runtime prerequisite</div>
             </Card>
             <Card>
@@ -129,8 +129,8 @@ export default function Home() {
               <div className="mt-1 text-sm text-zinc-400">from command to serving requests</div>
             </Card>
             <Card>
-              <div className="text-3xl font-bold text-emerald-400">120 / 120</div>
-              <div className="mt-1 text-sm text-zinc-400">tests pass with the real supabase-js</div>
+              <div className="text-3xl font-bold text-emerald-400">168 / 168</div>
+              <div className="mt-1 text-sm text-zinc-400">integration tests pass · both engines</div>
             </Card>
           </div>
         </section>

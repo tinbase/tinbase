@@ -38,7 +38,7 @@ The durable, objective measure (build this early — it makes every later phase 
 
 Until the harness exists, coverage numbers below are our own honest estimates.
 
-## Current state (v0.2.2)
+## Current state (v0.7.0)
 
 | Module | Coverage | Biggest gaps |
 | --- | --- | --- |

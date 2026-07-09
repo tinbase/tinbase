@@ -108,7 +108,7 @@ function loadWebhooks(dir: string): import('./webhooks/service.js').WebhookConfi
 }
 
 function printHelp(): void {
-  console.log(`tinbase — Supabase-compatible backend on PGlite (no Docker)
+  console.log(`tinbase — Supabase-compatible backend, no Docker (embedded Postgres / PGlite)
 
 Usage: tinbase [command] [options]
 

@@ -35,7 +35,7 @@ const DATA = [
   { name: 'tinbase (wasm)', db: 'real Postgres · PGlite', logo: '/logo.svg', self: true, browser: true, install: 27, ram: 640, note: 'PGlite WASM — portable, heavy heap' },
   { name: 'PocketBase', db: 'SQLite · different API', logo: '/pocketbase.svg', self: false, flag: true, install: 30, ram: 24, note: 'Go binary + SQLite · v0.39.5 — not supabase-js compatible' },
   { name: 'tinbase (native)', db: 'real Postgres 17', logo: '/logo.svg', self: true, install: 36, ram: 100, note: 'embedded native Postgres 17' },
-  { name: 'tinbase (binary)', db: 'real Postgres 17', logo: '/logo.svg', self: true, install: 92, ram: 66, note: 'single executable, no runtime needed' },
+  { name: 'tinbase (binary)', db: 'real Postgres 17', logo: '/logo.svg', self: true, install: 92, ram: 66, note: '58 MB executable + Postgres binaries fetched on first run; no runtime needed' },
   { name: 'Supabase local', db: 'Postgres · 12 containers', logo: '/supabase.svg', self: false, install: 2291, ram: 1626, note: '12 Docker containers · CLI 2.40 — off the chart' },
 ]
 // Linear axis sized to the single-process engines; the Docker stack is clipped.

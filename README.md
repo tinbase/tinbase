@@ -79,7 +79,7 @@ The wasm and native engines run the identical bootstrap, migrations, RLS, and re
 ### Single-binary build
 
 ```bash
-npm run build:binary   # requires bun; emits dist-bin/tinbase (~57 MB)
+npm run build:binary   # requires bun; emits dist-bin/tinbase (~58 MB)
 
 ./tinbase start        # that's the whole deployment
 ```
@@ -182,7 +182,7 @@ Measured on an Apple Silicon Mac (48 GB), macOS 15. Same workload for all three:
 | Runtime memory at boot | 49 MB | 59 MB | 71 MB | ~610 MB² | 15 MB | 1,441 MB |
 | Runtime memory after workload | 66 MB | 100 MB | 185 MB | ~640 MB² | 24 MB | 1,626 MB |
 | Data on disk (1k rows) | 39 MB | 39 MB | 0 (in-memory) | 40 MB | 7 MB | 70 MB |
-| Install size | 92 MB (no runtime) | 36 MB³ | 3.6 MB³ | 27 MB³ | 30 MB | 2,291 MB⁴ |
+| Install size | 92 MB (58 MB binary + PG) | 36 MB³ | 3.6 MB³ | 27 MB³ | 30 MB | 2,291 MB⁴ |
 | Processes | 2 | 2 | 1 | 1 | 1 | 12 containers + Docker |
 | 1,000 inserts | 0.4 s | 0.5 s | 0.8 s | 0.8 s | 0.3 s | 1.1 s |
 | 1,000 filtered reads | 0.3 s | 0.4 s | 0.8 s | 0.9 s | 0.3 s | 1.0 s |
@@ -225,7 +225,7 @@ Beyond the client SDK, the local platform features real projects depend on also 
 
 ## Tests
 
-120 tests run the real `@supabase/supabase-js` against the backend (REST via in-process fetch, realtime over actual WebSockets), and pass on both the wasm and native engines:
+The integration suite drives the real `@supabase/supabase-js` against the backend (REST via in-process fetch, realtime over actual WebSockets); the full suite — **168 tests** — passes on both the wasm and native engines:
 
 ```bash
 npm test
