@@ -30,6 +30,17 @@ describe('storage', () => {
     expect(upd.error).toBeNull()
   })
 
+  it('rejects a bucket with an unparseable file_size_limit', async () => {
+    const res = await env.backend.fetch(
+      new Request('http://localhost:54321/storage/v1/bucket', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', apikey: env.backend.serviceRoleKey },
+        body: JSON.stringify({ name: 'bad-limit', id: 'bad-limit', file_size_limit: '10 megabytes' }),
+      })
+    )
+    expect(res.status).toBe(400)
+  })
+
   it('rejects bucket creation with anon key', async () => {
     const { error } = await env.supabase.storage.createBucket('nope')
     expect(error).not.toBeNull()

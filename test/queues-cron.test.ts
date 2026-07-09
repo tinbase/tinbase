@@ -96,4 +96,25 @@ describe('cron', () => {
       await b.close()
     }
   }, 15000)
+
+  it("throttles a '0 seconds' job to at most once per second (no busy loop)", async () => {
+    const b = await createBackend({ migrations: [{ name: '20240101_z', sql: 'create table zhits (at timestamptz default now())' }] })
+    try {
+      // drive the scheduler with a controllable clock instead of the real timer
+      let t = new Date('2024-01-01T00:00:00Z').getTime()
+      const svc = new CronService(b.db, 1000, () => new Date(t))
+      await b.db.query(`select cron.schedule('busy', '0 seconds', 'insert into zhits default values')`)
+      await svc.tick() // t=0     → runs
+      t += 500
+      await svc.tick() // t=500ms → must NOT run (interval floored to 1s)
+      const n1 = await b.db.query(`select count(*)::int as n from zhits`)
+      expect((n1.rows[0] as any).n).toBe(1)
+      t += 600
+      await svc.tick() // t=1100ms → runs again
+      const n2 = await b.db.query(`select count(*)::int as n from zhits`)
+      expect((n2.rows[0] as any).n).toBe(2)
+    } finally {
+      await b.close()
+    }
+  }, 15000)
 })
