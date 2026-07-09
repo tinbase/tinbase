@@ -128,6 +128,9 @@ export class StorageHandler {
       }
       return storageError(404, 'not_found', `unknown storage endpoint: ${rest}`)
     } catch (e) {
+      if (e instanceof StorageValidationError) {
+        return storageError(400, 'InvalidRequest', e.message)
+      }
       const pg = e as { code?: string; message?: string }
       if (pg.code === '42501') {
         return storageError(403, 'Unauthorized', pg.message ?? 'new row violates row-level security policy')
@@ -591,11 +594,15 @@ function objectJson(r: ObjectRow): Record<string, unknown> {
   }
 }
 
+class StorageValidationError extends Error {}
+
 function parseSizeLimit(v: number | string | null | undefined): number | null {
-  if (v === null || v === undefined) return null
+  if (v === null || v === undefined || v === '') return null
   if (typeof v === 'number') return v
   const m = v.match(/^(\d+(?:\.\d+)?)\s*(b|kb|mb|gb)?$/i)
-  if (!m) return null
+  // a provided-but-unparseable limit must be rejected, not silently treated as
+  // unlimited (which would disable the cap on a typo like "10 megabytes")
+  if (!m) throw new StorageValidationError(`invalid file_size_limit: ${v}`)
   const mult = { b: 1, kb: 1024, mb: 1024 ** 2, gb: 1024 ** 3 }[(m[2] ?? 'b').toLowerCase()]!
   return Math.floor(parseFloat(m[1]) * mult)
 }

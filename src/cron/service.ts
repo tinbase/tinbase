@@ -56,7 +56,8 @@ export class CronService {
   private isDue(job: JobRow, now: Date): boolean {
     const secs = job.schedule.match(/^(\d+)\s*seconds?$/i)
     if (secs) {
-      const interval = parseInt(secs[1], 10) * 1000
+      // floor at 1s so "0 seconds" (or a malformed 0) can't busy-loop every tick
+      const interval = Math.max(1, parseInt(secs[1], 10)) * 1000
       const last = this.lastRun.get(job.jobid) ?? 0
       return now.getTime() - last >= interval
     }
