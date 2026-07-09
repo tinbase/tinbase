@@ -98,7 +98,7 @@ export class AuthHandler {
       if (path === 'callback' && (method === 'GET' || method === 'POST')) {
         return await this.oauth.callback(url, (userId) => this.sessionTokensFor(userId))
       }
-      if (path.startsWith('admin/users')) return await this.admin(req, ctx, path, method)
+      if (path.startsWith('admin/')) return await this.admin(req, ctx, path, method)
       return authError(404, 'not_found', `unknown auth endpoint: ${path}`)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -147,7 +147,9 @@ export class AuthHandler {
        returning *`,
       [email, hashed, JSON.stringify(body.data ?? {})]
     )
-    return json(200, await this.sessionFor(res.rows[0] as UserRow))
+    const newUser = res.rows[0] as UserRow
+    await this.audit('user_signedup', { actorId: newUser.id, actorEmail: email })
+    return json(200, await this.sessionFor(newUser))
   }
 
   private async token(req: Request, url: URL): Promise<Response> {
@@ -159,9 +161,11 @@ export class AuthHandler {
       const res = await this.db.query(`select * from auth.users where email = $1`, [email])
       const user = res.rows[0] as UserRow | undefined
       if (!user || !user.encrypted_password || !(await verifyPassword(body.password ?? '', user.encrypted_password))) {
+        await this.audit('login_failed', { actorEmail: email, traits: { grant_type: 'password' } })
         return authError(400, 'invalid_credentials', 'Invalid login credentials')
       }
       await this.db.query(`update auth.users set last_sign_in_at = now() where id = $1`, [user.id])
+      await this.audit('login', { actorId: user.id, actorEmail: user.email, traits: { grant_type: 'password' } })
       return json(200, await this.sessionFor(user))
     }
 
@@ -263,6 +267,7 @@ export class AuthHandler {
     const user = await this.userFromBearer(req)
     if (user) {
       await this.db.query(`update auth.refresh_tokens set revoked = true where user_id = $1`, [user.id])
+      await this.audit('logout', { actorId: user.id, actorEmail: user.email })
     }
     return new Response(null, { status: 204 })
   }
@@ -391,6 +396,14 @@ export class AuthHandler {
     const idMatch = path.match(/^admin\/users\/([0-9a-f-]{36})$/)
     const exportMatch = path.match(/^admin\/users\/([0-9a-f-]{36})\/export$/)
 
+    if (path === 'admin/audit' && method === 'GET') {
+      const res = await this.db.query(
+        `select id, payload, created_at, ip_address from auth.audit_log_entries
+         order by created_at desc limit 200`
+      )
+      return json(200, { entries: res.rows })
+    }
+
     if (exportMatch && method === 'GET') {
       return await this.exportUser(exportMatch[1])
     }
@@ -465,6 +478,31 @@ export class AuthHandler {
     return authError(404, 'not_found', `unknown admin endpoint`)
   }
 
+  // ── audit trail ───────────────────────────────────────────────────────
+
+  /**
+   * Append a security event to auth.audit_log_entries (GoTrue-compatible
+   * payload). Best-effort: a logging failure never breaks the request.
+   */
+  private async audit(
+    action: string,
+    opts: { actorId?: string | null; actorEmail?: string | null; type?: string; traits?: Record<string, unknown> } = {}
+  ): Promise<void> {
+    try {
+      const payload = {
+        action,
+        actor_id: opts.actorId ?? null,
+        actor_username: opts.actorEmail ?? null,
+        log_type: opts.type ?? 'account',
+        traits: opts.traits ?? {},
+        timestamp: new Date().toISOString(),
+      }
+      await this.db.query(`insert into auth.audit_log_entries (payload) values ($1::jsonb)`, [JSON.stringify(payload)])
+    } catch {
+      // audit logging is best-effort
+    }
+  }
+
   // ── GDPR: data-subject access (export) ────────────────────────────────
 
   /**
@@ -505,6 +543,7 @@ export class AuthHandler {
       'reauthentication_token',
     ]
     const userSafe = Object.fromEntries(Object.entries(user).filter(([k]) => !SENSITIVE.includes(k)))
+    await this.audit('user_data_exported', { actorId: userId, type: 'admin' })
     return json(200, {
       exported_at: new Date().toISOString(),
       user: this.userJson(user),
@@ -536,6 +575,7 @@ export class AuthHandler {
     const del = await this.db.query(`delete from auth.users where id = $1 returning id`, [userId])
     if (del.rows.length === 0) return authError(404, 'user_not_found', 'User not found')
     const c = before.rows[0]
+    await this.audit('user_deleted', { actorId: userId, type: 'admin', traits: { erased: true } })
     return json(200, {
       erased: true,
       user_id: userId,

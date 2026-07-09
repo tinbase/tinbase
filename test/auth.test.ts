@@ -175,6 +175,36 @@ describe('auth', () => {
     )
     expect(res.status).toBe(403)
   })
+
+  it('records auth events in the audit log', async () => {
+    const email = `audit-${Date.now()}@example.com`
+    await env.supabase.auth.signUp({ email, password: 'password123' })
+    await env.supabase.auth.signInWithPassword({ email, password: 'wrong' }) // failed login
+    await env.supabase.auth.signInWithPassword({ email, password: 'password123' }) // success
+    await env.supabase.auth.signOut()
+
+    const res = await env.backend.fetch(
+      new Request('http://localhost:54321/auth/v1/admin/audit', {
+        headers: { apikey: env.backend.serviceRoleKey, authorization: `Bearer ${env.backend.serviceRoleKey}` },
+      })
+    )
+    expect(res.status).toBe(200)
+    const { entries } = (await res.json()) as { entries: { payload: { action: string; actor_username: string | null } }[] }
+    const actions = entries.map((e) => e.payload.action)
+    expect(actions).toContain('user_signedup')
+    expect(actions).toContain('login')
+    expect(actions).toContain('login_failed')
+    expect(actions).toContain('logout')
+  })
+
+  it('audit log rejects the anon key', async () => {
+    const res = await env.backend.fetch(
+      new Request('http://localhost:54321/auth/v1/admin/audit', {
+        headers: { apikey: env.backend.anonKey, authorization: `Bearer ${env.backend.anonKey}` },
+      })
+    )
+    expect(res.status).toBe(403)
+  })
 })
 
 describe('auth OTP brute-force protection', () => {

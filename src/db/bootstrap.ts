@@ -100,6 +100,13 @@ create table if not exists auth.mfa_challenges (
   expires_at timestamptz not null
 );
 
+create table if not exists auth.audit_log_entries (
+  id uuid primary key default gen_random_uuid(),
+  payload jsonb,
+  created_at timestamptz default now(),
+  ip_address varchar(64) not null default ''
+);
+
 create table if not exists storage.buckets (
   id text primary key,
   name text not null unique,
@@ -322,6 +329,16 @@ create table if not exists auth.mfa_challenges (
   created_at timestamptz default now(),
   expires_at timestamptz not null
 );
+
+-- append-only security audit trail (GoTrue-compatible shape)
+create table if not exists auth.audit_log_entries (
+  instance_id uuid default '00000000-0000-0000-0000-000000000000',
+  id uuid primary key default gen_random_uuid(),
+  payload jsonb,
+  created_at timestamptz default now(),
+  ip_address varchar(64) not null default ''
+);
+create index if not exists audit_logs_instance_id_idx on auth.audit_log_entries(created_at);
 
 grant usage on schema auth to anon, authenticated, service_role;
 
