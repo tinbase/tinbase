@@ -57,9 +57,17 @@ export class AdminApi {
     const info = await this.db.getSchemaInfo(schema)
     const tables = []
     for (const t of info.tables.values()) {
-      const count = await this.db.query<{ n: number }>(
-        `select count(*)::int as n from ${quoteIdent(schema)}.${quoteIdent(t.name)}`
-      )
+      // A single table whose count fails (e.g. an engine gap in an RLS policy's
+      // correlated subquery on the pgmem preview engine) must not blank the whole
+      // table list — fall back to an unknown count for just that table.
+      let count: { rows: { n: number }[] }
+      try {
+        count = await this.db.query<{ n: number }>(
+          `select count(*)::int as n from ${quoteIdent(schema)}.${quoteIdent(t.name)}`
+        )
+      } catch {
+        count = { rows: [{ n: -1 }] }
+      }
       // foreign keys originating from this table, for column hints
       const fks = info.foreignKeys
         .filter((fk) => fk.srcSchema === schema && fk.srcTable === t.name)

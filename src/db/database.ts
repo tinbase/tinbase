@@ -134,21 +134,36 @@ export class Database {
         [version]
       )
       if (seen.rows.length > 0) continue
-      await this.engine.transaction(async (tx) => {
-        // The Supabase CLI applies each migration on a fresh connection, so a
-        // top-level `SET search_path TO ''` in one file never leaks to the next.
-        // tinbase runs every migration on one connection, so reset to the
-        // default first — otherwise a hardened migration's search_path change
-        // breaks unqualified calls (e.g. gen_random_bytes) in later files.
-        await tx.exec(DEFAULT_SEARCH_PATH_SQL)
-        await tx.exec(rewriteMigrationSql(m.sql))
-        await tx.query(
-          `insert into supabase_migrations.schema_migrations (version, name, statements)
-           values ($1, $2, $3)`,
-          [version, m.name, [m.sql]]
-        )
-      })
-      applied.push(m.name)
+      const applyMigration = () =>
+        this.engine.transaction(async (tx) => {
+          // The Supabase CLI applies each migration on a fresh connection, so a
+          // top-level `SET search_path TO ''` in one file never leaks to the next.
+          // tinbase runs every migration on one connection, so reset to the
+          // default first — otherwise a hardened migration's search_path change
+          // breaks unqualified calls (e.g. gen_random_bytes) in later files.
+          await tx.exec(DEFAULT_SEARCH_PATH_SQL)
+          await tx.exec(rewriteMigrationSql(m.sql))
+          await tx.query(
+            `insert into supabase_migrations.schema_migrations (version, name, statements)
+             values ($1, $2, $3)`,
+            [version, m.name, [m.sql]]
+          )
+        })
+      try {
+        await applyMigration()
+        applied.push(m.name)
+      } catch (e) {
+        // The pgmem preview engine is a Postgres subset; a migration may use a
+        // feature it doesn't implement. Skip it (with a warning) rather than
+        // aborting startup, so the rest of the schema still comes up for local dev.
+        if (this.engine.minimalBootstrap) {
+          console.warn(
+            `  [pgmem] skipped migration ${m.name}: ${(e as Error)?.message?.split('\n')[0] ?? e}`
+          )
+          continue
+        }
+        throw e
+      }
     }
     if (seedSql) {
       const hash = await sha256Hex(seedSql)
