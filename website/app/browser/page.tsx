@@ -39,7 +39,7 @@ const backend = await createBackend({ dataDir: 'idb://my-app' })`
 
 const ENGINES = [
   ['Footprint', '~3.6 MB · pure JS · no WASM', '~575–650 MB heap · WASM'],
-  ['Fidelity', 'CRUD, auth, functions, realtime, webhooks', 'full Postgres — RLS, triggers, extensions'],
+  ['Fidelity', 'CRUD, auth, functions, realtime, webhooks + PL/pgSQL, triggers, RLS policies', 'full Postgres — enforced RLS, extensions'],
   ['Persistence', 'in-memory', 'IndexedDB / OPFS'],
   ['Best for', 'phones, previews, the lightest embed', 'full Postgres parity in the browser'],
 ]
@@ -103,8 +103,9 @@ export default function BrowserPage() {
             </table>
           </div>
           <p className="mt-4 max-w-2xl text-sm text-zinc-500">
-            pg-mem is a subset (no RLS, cron, or pgmq) meant for local dev and previews. For full Postgres semantics in
-            the browser, use PGlite — and persist across reloads with an IndexedDB data dir:
+            pg-mem now runs PL/pgSQL, triggers and RLS-policy DDL (via the <a href="https://www.npmjs.com/package/@tinbase/pg-mem" className="underline decoration-zinc-700 underline-offset-2 hover:text-zinc-300">@tinbase/pg-mem</a> fork),
+            but as a superuser so RLS isn&apos;t enforced per-request, and cron/pgmq are absent — it&apos;s meant for local dev and
+            previews. For full, enforced Postgres semantics in the browser, use PGlite — and persist across reloads with an IndexedDB data dir:
           </p>
           <div className="mt-4">
             <Code code={PGLITE} lang="ts" />
