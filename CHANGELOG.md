@@ -4,6 +4,22 @@ All notable changes to tinbase are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and versions follow semver
 (pre-1.0, minor bumps may include breaking changes).
 
+## [0.8.1] — 2026-07-10
+
+Slims the `pgmem` engine and corrects its documented footprint.
+
+### Changed
+- **`@tinbase/pg-mem` → 3.2.0**, which drops `moment.js` (~5.2 MB, mostly unused locale
+  data) and `json-stable-stringify` (+ its `get-intrinsic` chain, ~0.5 MB) for a
+  zero-dependency date layer. The pgmem engine's install footprint falls from **~13 MB to
+  ~6.7 MB** — still the lightest engine. Behavior-preserving: verified against the engine's
+  full test suite and 256/256 differential conformance vs Postgres 16.
+
+### Docs
+- Corrected the pgmem install-size figures across the README and website (`/docs`,
+  `/browser`, weight chart) to the re-measured **~6.7 MB** (the old ~3.6 MB counted the
+  package alone, not its installed dependency tree).
+
 ## [0.8.0] — 2026-07-10
 
 The `pgmem` engine now runs real Supabase workloads. Backed by the
