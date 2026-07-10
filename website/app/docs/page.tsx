@@ -382,7 +382,7 @@ const supabase = createClient('http://localhost', backend.anonKey, {
           </div>
           <P>
             The two axes tell different stories: pg-mem uses the most RAM under load of the tinbase
-            engines, yet is by far the lightest to <em>ship</em> — a 3.6 MB pure-JS install with no
+            engines, yet is by far the lightest to <em>ship</em> — a ~13 MB pure-JS install with no
             WASM and no native binary, ideal for the browser and embedded previews.
           </P>
           <div className="overflow-x-auto">
@@ -404,7 +404,7 @@ const supabase = createClient('http://localhost', backend.anonKey, {
                   ['Memory at boot', '49 MB', '59 MB', '71 MB', '~610 MB', '15 MB', '1,441 MB'],
                   ['Memory under load', '66 MB', '100 MB', '185 MB', '~640 MB', '24 MB', '1,626 MB'],
                   ['Data on disk (1k rows)', '39 MB', '39 MB', '0 (in-memory)', '40 MB', '7 MB', '70 MB'],
-                  ['Install size', '92 MB (58 MB bin + PG)', '36 MB + Node', '3.6 MB + Node', '27 MB + Node', '30 MB', '2,291 MB + Docker'],
+                  ['Install size', '92 MB (58 MB bin + PG)', '36 MB + Node', '13 MB + Node', '27 MB + Node', '30 MB', '2,291 MB + Docker'],
                   ['Processes', '2', '2', '1', '1', '1', '12 containers'],
                   ['1,000 inserts', '0.4 s', '0.5 s', '0.8 s', '0.8 s', '0.3 s', '1.1 s'],
                   ['1,000 filtered reads', '0.3 s', '0.4 s', '0.8 s', '0.9 s', '0.3 s', '1.0 s'],
@@ -424,7 +424,7 @@ const supabase = createClient('http://localhost', backend.anonKey, {
             ~575–650 MB depending on GC timing — treat it as a band, not a point. pgmem is a pure-JS
             in-memory engine that runs PL/pgSQL, triggers and RLS-policy DDL (migrations apply unchanged),
             though as a superuser so RLS isn&apos;t enforced per-request, and cron/pgmq are absent — but
-            a 3.6 MB install with no WASM, the lightest option for the browser.
+            a ~13 MB install with no WASM, the lightest option for the browser.
           </P>
           <P>
             Methodology, raw numbers, and a reproducible script live in the repo:{' '}

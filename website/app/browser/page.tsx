@@ -38,7 +38,7 @@ const PGLITE = `import { createBackend } from 'tinbase'
 const backend = await createBackend({ dataDir: 'idb://my-app' })`
 
 const ENGINES = [
-  ['Footprint', '~3.6 MB · pure JS · no WASM', '~575–650 MB heap · WASM'],
+  ['Footprint', '~13 MB install · pure JS · no WASM', '~575–650 MB heap · WASM'],
   ['Fidelity', 'CRUD, auth, functions, realtime, webhooks + PL/pgSQL, triggers, RLS policies', 'full Postgres — enforced RLS, extensions'],
   ['Persistence', 'in-memory', 'IndexedDB / OPFS'],
   ['Best for', 'phones, previews, the lightest embed', 'full Postgres parity in the browser'],

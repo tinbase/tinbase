@@ -182,14 +182,14 @@ Measured on an Apple Silicon Mac (48 GB), macOS 15. Same workload for all three:
 | Runtime memory at boot | 49 MB | 59 MB | 71 MB | ~610 MB² | 15 MB | 1,441 MB |
 | Runtime memory after workload | 66 MB | 100 MB | 185 MB | ~640 MB² | 24 MB | 1,626 MB |
 | Data on disk (1k rows) | 39 MB | 39 MB | 0 (in-memory) | 40 MB | 7 MB | 70 MB |
-| Install size | 92 MB (58 MB binary + PG) | 36 MB³ | 3.6 MB³ | 27 MB³ | 30 MB | 2,291 MB⁴ |
+| Install size | 92 MB (58 MB binary + PG) | 36 MB³ | 13 MB³ | 27 MB³ | 30 MB | 2,291 MB⁴ |
 | Processes | 2 | 2 | 1 | 1 | 1 | 12 containers + Docker |
 | 1,000 inserts | 0.4 s | 0.5 s | 0.8 s | 0.8 s | 0.3 s | 1.1 s |
 | 1,000 filtered reads | 0.3 s | 0.4 s | 0.8 s | 0.9 s | 0.3 s | 1.0 s |
 
 ¹ **pgmem** is a pure-JS in-memory engine (local dev / preview) via the [`@tinbase/pg-mem`](https://www.npmjs.com/package/@tinbase/pg-mem) fork. It now runs PL/pgSQL, triggers and RLS-policy DDL (migrations apply unchanged, nothing skipped), but the engine runs as superuser so RLS isn't enforced per-request (realtime/webhook events are unfiltered), and **cron**/**pgmq** are absent. Pure JS (no WASM), the lightest option for the browser. See [Engines](#engines).
 ² The wasm figure is essentially PGlite's WASM heap, which measures anywhere in ~575–650 MB depending on GC timing — treat it as a band, not a point. It does not shrink under load.
-³ Native: Postgres 17 binaries + `dist`. pg-mem: `dist` + `pg-mem`. Wasm: `dist` + `@electric-sql/pglite`. All exclude the Node runtime you already have.
+³ Full production `node_modules` + `dist`, excluding the Node runtime you already have. Native: `dist` + node-pg (Postgres binaries download to a shared cache on first run). pg-mem: `dist` + `@tinbase/pg-mem` and its deps — ~13 MB, of which ~5 MB is `moment` (a pg-mem dependency); the pg-mem + parser code itself is ~5 MB. Wasm: `dist` + `@electric-sql/pglite`.
 ⁴ Sum of the Docker image sizes the default local stack runs, excluding Docker Desktop itself.
 
 **How to read this honestly:**

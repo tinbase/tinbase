@@ -31,7 +31,7 @@ const INSTALL_MUTED = '#6b7280' // grey — install (competitors)
 const RAM_MUTED = '#4b5563' // darker grey — RAM (competitors)
 
 const DATA = [
-  { name: 'tinbase (pg-mem)', db: 'Postgres subset · in-memory', logo: '/logo.svg', self: true, browser: true, install: 3.6, ram: 185, note: 'pure JS, no WASM — lightest to ship; more RAM under load' },
+  { name: 'tinbase (pg-mem)', db: 'Postgres (pg-mem fork) · in-memory', logo: '/logo.svg', self: true, browser: true, install: 13, ram: 185, note: 'pure JS, no WASM — lightest to ship; more RAM under load' },
   { name: 'tinbase (wasm)', db: 'real Postgres · PGlite', logo: '/logo.svg', self: true, browser: true, install: 27, ram: 640, note: 'PGlite WASM — portable, heavy heap' },
   { name: 'PocketBase', db: 'SQLite · different API', logo: '/pocketbase.svg', self: false, flag: true, install: 30, ram: 24, note: 'Go binary + SQLite · v0.39.5 — not supabase-js compatible' },
   { name: 'tinbase (native)', db: 'real Postgres 17', logo: '/logo.svg', self: true, install: 36, ram: 100, note: 'embedded native Postgres 17' },
@@ -179,7 +179,7 @@ export function WeightChart() {
         SQLite behind a different API — not a drop-in for supabase-js, unlike every tinbase engine.
         Linear scale; Supabase local (2,291 / 1,626 MB) is a 12-container Docker stack whose bars run
         off the axis (torn end) so the single-process engines stay comparable.
-        {showBrowser && ' pg-mem and wasm run in the browser; pg-mem trades runtime RAM for the smallest real install (3.6 MB, pure JS, no WASM).'}{' '}
+        {showBrowser && ' pg-mem and wasm run in the browser; pg-mem trades runtime RAM for the smallest real install (~13 MB, pure JS, no WASM).'}{' '}
         Physical footprint of the whole process tree (vmmap / docker stats), Apple Silicon · macOS 15 ·{' '}
         <a
           className="underline decoration-zinc-700 underline-offset-2 hover:text-zinc-300"
