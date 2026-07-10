@@ -21,7 +21,11 @@
 import type { DbEngine, EngineResults, EngineTx } from './engine.js'
 import { Mutex } from './engine.js'
 
-/** Split SQL into statements, respecting $tag$…$tag$ dollar-quoted blocks. */
+/**
+ * Split SQL into statements on top-level `;`. Respects $tag$…$tag$ dollar-quoted
+ * blocks, '…' string literals ('' escapes), "…" quoted identifiers, and both
+ * -- line and /* block *​/ comments — so a `;` inside any of those never splits.
+ */
 function splitStatements(sql: string): string[] {
   const out: string[] = []
   let cur = ''
@@ -38,6 +42,39 @@ function splitStatements(sql: string): string[] {
       }
       cur += ch
       i++
+      continue
+    }
+    // -- line comment
+    if (ch === '-' && sql[i + 1] === '-') {
+      const nl = sql.indexOf('\n', i)
+      const end = nl === -1 ? sql.length : nl
+      cur += sql.slice(i, end)
+      i = end
+      continue
+    }
+    // /* block comment */
+    if (ch === '/' && sql[i + 1] === '*') {
+      const close = sql.indexOf('*/', i + 2)
+      const end = close === -1 ? sql.length : close + 2
+      cur += sql.slice(i, end)
+      i = end
+      continue
+    }
+    // '…' string literal or "…" quoted identifier ('' / "" escapes)
+    if (ch === `'` || ch === '"') {
+      const q = ch
+      cur += ch
+      i++
+      while (i < sql.length) {
+        if (sql[i] === q) {
+          if (sql[i + 1] === q) { cur += q + q; i += 2; continue }
+          cur += q
+          i++
+          break
+        }
+        cur += sql[i]
+        i++
+      }
       continue
     }
     const m = ch === '$' ? sql.slice(i).match(/^\$[a-zA-Z_]*\$/) : null
@@ -102,6 +139,25 @@ export async function createPgmemEngine(): Promise<DbEngine> {
   })
   // set_config/current_setting exist in pg-mem; RLS context is a harmless no-op here
 
+  // The minimal bootstrap skips the auth schema, but migrations' RLS policies reference
+  // auth.uid()/jwt()/role()/email(). Define them (as the full bootstrap does) so those
+  // policies compile and RLS-protected tables are queryable/browsable.
+  db.public.none(`
+    create schema if not exists auth;
+    create or replace function auth.jwt() returns jsonb language sql stable as $$
+      select coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb
+    $$;
+    create or replace function auth.uid() returns uuid language sql stable as $$
+      select nullif(auth.jwt() ->> 'sub', '')::uuid
+    $$;
+    create or replace function auth.role() returns text language sql stable as $$
+      select coalesce(auth.jwt() ->> 'role', 'anon')
+    $$;
+    create or replace function auth.email() returns text language sql stable as $$
+      select auth.jwt() ->> 'email'
+    $$;
+  `)
+
   const { Client } = db.adapters.createPg()
   const client = new Client()
   await client.connect()
@@ -144,12 +200,18 @@ export async function createPgmemEngine(): Promise<DbEngine> {
     transaction: (fn) =>
       mutex.run(async () => {
         // pg-mem is single-connection in-memory; serialize and use a snapshot so
-        // a thrown fn rolls back
+        // a thrown fn rolls back. Note: pg-mem commits DDL immediately and cannot
+        // restore a snapshot once the schema changed, so a rollback attempt after
+        // DDL may itself fail — swallow that and surface the ORIGINAL error.
         const restore = db.backup()
         try {
           return await fn(tx)
         } catch (e) {
-          restore.restore()
+          try {
+            restore.restore()
+          } catch {
+            // schema changed since backup (DDL ran) — can't roll back in-memory; ignore
+          }
           throw e
         }
       }),
