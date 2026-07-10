@@ -117,9 +117,9 @@ const GROUPS: Group[] = [
 ]
 
 const BADGE: Record<Status, { label: string; cls: string }> = {
-  yes: { label: '✓ Yes', cls: 'text-emerald-400' },
-  partial: { label: '◑ Partial', cls: 'text-amber-400' },
-  no: { label: '– Planned', cls: 'text-zinc-500' },
+  yes: { label: '✓ Yes', cls: 'text-accent' },
+  partial: { label: '◑ Partial', cls: 'text-warn' },
+  no: { label: '– Planned', cls: 'text-subtle' },
 }
 
 export function FeatureMatrix() {
@@ -130,16 +130,16 @@ export function FeatureMatrix() {
           {GROUPS.map((g) => (
             <Fragment key={g.area}>
               <tr>
-                <td colSpan={3} className="border-b border-zinc-800 pb-2 pt-6">
-                  <span className="text-[13px] font-semibold uppercase tracking-wide text-zinc-200">{g.area}</span>
-                  {g.coverage && <span className="ml-2 text-xs text-emerald-400">{g.coverage}</span>}
+                <td colSpan={3} className="border-b border-border pb-2 pt-6">
+                  <span className="text-[13px] font-semibold uppercase tracking-wide text-fg">{g.area}</span>
+                  {g.coverage && <span className="ml-2 text-xs text-accent">{g.coverage}</span>}
                 </td>
               </tr>
               {g.rows.map(([feature, status, note]) => (
-                <tr key={g.area + feature} className="border-b border-zinc-800/50 align-top">
-                  <td className="py-2 pr-4 text-zinc-300">{feature}</td>
+                <tr key={g.area + feature} className="border-b border-border align-top">
+                  <td className="py-2 pr-4 text-fg">{feature}</td>
                   <td className={'w-24 whitespace-nowrap py-2 pr-4 font-medium ' + BADGE[status].cls}>{BADGE[status].label}</td>
-                  <td className="w-52 py-2 text-xs text-zinc-500">{note}</td>
+                  <td className="w-52 py-2 text-xs text-subtle">{note}</td>
                 </tr>
               ))}
             </Fragment>

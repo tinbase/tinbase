@@ -49,25 +49,25 @@ export default function BrowserPage() {
     <>
       <SiteNav />
       <main className="mx-auto max-w-5xl px-6 py-16">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-emerald-400">In the browser</p>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-accent">In the browser</p>
         <h1 className="max-w-3xl text-balance text-4xl font-bold tracking-tight sm:text-5xl">
           The whole backend, in a tab
         </h1>
-        <p className="mt-5 max-w-2xl text-pretty text-lg text-zinc-400">
+        <p className="mt-5 max-w-2xl text-pretty text-lg text-muted">
           Every tinbase service is a pure{' '}
-          <code className="rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-sm text-emerald-300">
+          <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-sm text-accent">
             (Request) ⇒ Response
           </code>{' '}
           fetch handler. There is no HTTP layer to stand up — hand the handler to supabase-js as its{' '}
-          <code className="rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-sm text-emerald-300">fetch</code> and the
-          database, auth, storage, and realtime all run <span className="text-zinc-200">in-process</span>, inside the
+          <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-sm text-accent">fetch</code> and the
+          database, auth, storage, and realtime all run <span className="text-fg">in-process</span>, inside the
           page. No server. No network round-trip.
         </p>
 
         <section className="mt-12">
-          <h2 className="text-xl font-semibold text-zinc-100">Run it in-process</h2>
-          <p className="mt-2 max-w-2xl text-[15px] text-zinc-400">
-            The same <code className="font-mono text-sm text-emerald-300">supabase-js</code> you use everywhere, pointed
+          <h2 className="text-xl font-semibold text-fg">Run it in-process</h2>
+          <p className="mt-2 max-w-2xl text-[15px] text-muted">
+            The same <code className="font-mono text-sm text-accent">supabase-js</code> you use everywhere, pointed
             at a backend that lives in the same JavaScript heap:
           </p>
           <div className="mt-4">
@@ -76,25 +76,25 @@ export default function BrowserPage() {
         </section>
 
         <section className="mt-14">
-          <h2 className="text-xl font-semibold text-zinc-100">Pick an engine for the browser</h2>
-          <p className="mt-2 max-w-2xl text-[15px] text-zinc-400">
-            Two of the three engines run in a browser. <span className="text-zinc-200">pg-mem</span> is pure JavaScript
-            and the lightest thing to embed; <span className="text-zinc-200">PGlite</span> is real Postgres compiled to
+          <h2 className="text-xl font-semibold text-fg">Pick an engine for the browser</h2>
+          <p className="mt-2 max-w-2xl text-[15px] text-muted">
+            Two of the three engines run in a browser. <span className="text-fg">pg-mem</span> is pure JavaScript
+            and the lightest thing to embed; <span className="text-fg">PGlite</span> is real Postgres compiled to
             WASM when you want full fidelity.
           </p>
           <div className="mt-5 overflow-x-auto">
             <table className="w-full min-w-[560px] border-collapse text-sm">
               <thead>
-                <tr className="border-b border-zinc-800 text-left text-zinc-300">
+                <tr className="border-b border-border text-left text-fg">
                   <th className="py-2 pr-4 font-semibold"></th>
-                  <th className="py-2 pr-4 font-semibold text-emerald-400">pg-mem</th>
-                  <th className="py-2 font-semibold text-emerald-400">PGlite (wasm)</th>
+                  <th className="py-2 pr-4 font-semibold text-accent">pg-mem</th>
+                  <th className="py-2 font-semibold text-accent">PGlite (wasm)</th>
                 </tr>
               </thead>
-              <tbody className="text-zinc-400">
+              <tbody className="text-muted">
                 {ENGINES.map(([label, a, b]) => (
-                  <tr key={label} className="border-b border-zinc-800/60">
-                    <td className="py-2 pr-4 font-medium text-zinc-200">{label}</td>
+                  <tr key={label} className="border-b border-border">
+                    <td className="py-2 pr-4 font-medium text-fg">{label}</td>
                     <td className="py-2 pr-4">{a}</td>
                     <td className="py-2">{b}</td>
                   </tr>
@@ -102,8 +102,8 @@ export default function BrowserPage() {
               </tbody>
             </table>
           </div>
-          <p className="mt-4 max-w-2xl text-sm text-zinc-500">
-            pg-mem now runs PL/pgSQL, triggers and RLS-policy DDL (via the <a href="https://www.npmjs.com/package/@tinbase/pg-mem" className="underline decoration-zinc-700 underline-offset-2 hover:text-zinc-300">@tinbase/pg-mem</a> fork),
+          <p className="mt-4 max-w-2xl text-sm text-subtle">
+            pg-mem now runs PL/pgSQL, triggers and RLS-policy DDL (via the <a href="https://www.npmjs.com/package/@tinbase/pg-mem" className="underline decoration-border underline-offset-2 hover:text-fg">@tinbase/pg-mem</a> fork),
             but as a superuser so RLS isn&apos;t enforced per-request, and cron/pgmq are absent — it&apos;s meant for local dev and
             previews. For full, enforced Postgres semantics in the browser, use PGlite — and persist across reloads with an IndexedDB data dir:
           </p>
@@ -113,25 +113,25 @@ export default function BrowserPage() {
         </section>
 
         <section className="mt-14">
-          <h2 className="text-xl font-semibold text-zinc-100">How it fits together</h2>
-          <p className="mt-2 max-w-2xl text-[15px] text-zinc-400">
+          <h2 className="text-xl font-semibold text-fg">How it fits together</h2>
+          <p className="mt-2 max-w-2xl text-[15px] text-muted">
             The same fetch handler serves an HTTP + WebSocket server in Node, or runs directly in the page in the
             browser — only the transport changes.
           </p>
-          <div className="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/60 p-6">
+          <div className="mt-6 rounded-xl border border-border bg-surface p-6">
             <ArchitectureDiagram />
           </div>
         </section>
 
         <section className="mt-14">
-          <h2 className="text-xl font-semibold text-zinc-100">Why it was built this way</h2>
-          <p className="mt-3 max-w-2xl leading-relaxed text-zinc-400">
+          <h2 className="text-xl font-semibold text-fg">Why it was built this way</h2>
+          <p className="mt-3 max-w-2xl leading-relaxed text-muted">
             tinbase came out of{' '}
-            <a href="https://lifo.sh" className="font-medium text-emerald-400 hover:text-emerald-300">
+            <a href="https://lifo.sh" className="font-medium text-accent hover:text-accent-hover">
               lifo
             </a>{' '}
             — a project that maps Linux APIs into the browser — and{' '}
-            <a href="https://rapidnative.com" className="font-medium text-emerald-400 hover:text-emerald-300">
+            <a href="https://rapidnative.com" className="font-medium text-accent hover:text-accent-hover">
               RapidNative
             </a>
             , where Expo apps run full-stack in the browser and on phones. Both need a real backend with no server behind
@@ -143,7 +143,7 @@ export default function BrowserPage() {
           <LinkButton href="/docs#embedding">Embedding docs</LinkButton>
           <Link
             href="/studio"
-            className="inline-flex h-10 items-center rounded-lg border border-zinc-700 px-5 text-sm font-semibold text-zinc-200 hover:bg-zinc-800/60"
+            className="inline-flex h-10 items-center rounded-lg border border-strong px-5 text-sm font-semibold text-fg hover:bg-surface-2"
           >
             See the Studio →
           </Link>

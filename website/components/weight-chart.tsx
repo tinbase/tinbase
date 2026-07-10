@@ -59,10 +59,10 @@ export function WeightChart() {
   return (
     <figure aria-label="Install footprint and memory under load in megabytes, lower is better">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <figcaption className="text-sm font-medium text-zinc-400">
+        <figcaption className="text-sm font-medium text-muted">
           Install footprint vs memory under load (MB) · lower is better
         </figcaption>
-        <div className="flex items-center gap-4 text-xs text-zinc-400">
+        <div className="flex items-center gap-4 text-xs text-muted">
           {SERIES.map((s) => (
             <span key={s.key} className="flex items-center gap-1.5">
               <span className="inline-block size-3 rounded-sm" style={{ background: s.color }} />
@@ -75,7 +75,7 @@ export function WeightChart() {
       <button
         type="button"
         onClick={() => setShowBrowser((v) => !v)}
-        className="mb-2 inline-flex items-center gap-1 text-xs font-medium text-emerald-400 transition-colors hover:text-emerald-300"
+        className="mb-2 inline-flex items-center gap-1 text-xs font-medium text-accent transition-colors hover:text-accent-hover"
         aria-expanded={showBrowser}
       >
         {showBrowser ? 'Hide browser-based options' : 'Show browser-based options'}
@@ -98,13 +98,13 @@ export function WeightChart() {
                   <div
                     className={
                       'truncate text-sm ' +
-                      (d.self ? 'font-semibold text-emerald-400' : 'text-zinc-500')
+                      (d.self ? 'font-semibold text-accent' : 'text-subtle')
                     }
                   >
                     {d.name}
-                    {d.flag && <sup className="text-amber-400"> †</sup>}
+                    {d.flag && <sup className="text-warn"> †</sup>}
                   </div>
-                  <div className={'truncate text-[11px] leading-tight ' + (d.self ? 'text-zinc-500' : 'text-zinc-600')}>
+                  <div className={'truncate text-[11px] leading-tight ' + (d.self ? 'text-subtle' : 'text-subtle')}>
                     {d.db}
                   </div>
                 </div>
@@ -145,7 +145,7 @@ export function WeightChart() {
                           <span
                             className="absolute inset-y-0 -right-1 w-2"
                             style={{
-                              background: `repeating-linear-gradient(45deg, ${color} 0 4px, #1a1a19 4px 7px)`,
+                              background: `repeating-linear-gradient(45deg, ${color} 0 4px, var(--bg) 4px 7px)`,
                             }}
                           />
                         )}
@@ -153,15 +153,15 @@ export function WeightChart() {
                       <span
                         className={
                           'ml-2 whitespace-nowrap text-xs tabular-nums ' +
-                          (d.self ? 'text-zinc-400' : 'text-zinc-500')
+                          (d.self ? 'text-muted' : 'text-subtle')
                         }
                       >
                         {mb.toLocaleString()}
                       </span>
                       {active && (
-                        <div className="pointer-events-none absolute -top-8 left-0 z-10 whitespace-nowrap rounded-md border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-xs text-zinc-200 shadow-lg">
+                        <div className="pointer-events-none absolute -top-8 left-0 z-10 whitespace-nowrap rounded-md border border-strong bg-surface-2 px-2.5 py-1.5 text-xs text-fg shadow-lg">
                           <span className="font-semibold">{mb.toLocaleString()} MB</span>
-                          <span className="text-zinc-400"> {s.label.toLowerCase()} · {d.note}</span>
+                          <span className="text-muted"> {s.label.toLowerCase()} · {d.note}</span>
                         </div>
                       )}
                     </div>
@@ -173,16 +173,16 @@ export function WeightChart() {
         </div>
       </div>
 
-      <p className="mt-6 text-xs text-zinc-500">
+      <p className="mt-6 text-xs text-subtle">
         tinbase engines in colour; PocketBase and Supabase muted for context.{' '}
-        <span className="text-amber-400">†</span> PocketBase is the smallest footprint, but it is
+        <span className="text-warn">†</span> PocketBase is the smallest footprint, but it is
         SQLite behind a different API — not a drop-in for supabase-js, unlike every tinbase engine.
         Linear scale; Supabase local (2,291 / 1,626 MB) is a 12-container Docker stack whose bars run
         off the axis (torn end) so the single-process engines stay comparable.
         {showBrowser && ' pg-mem and wasm run in the browser; pg-mem trades runtime RAM for the smallest real install (~6.7 MB, pure JS, no WASM).'}{' '}
         Physical footprint of the whole process tree (vmmap / docker stats), Apple Silicon · macOS 15 ·{' '}
         <a
-          className="underline decoration-zinc-700 underline-offset-2 hover:text-zinc-300"
+          className="underline decoration-border underline-offset-2 hover:text-fg"
           href="https://github.com/tinbase/tinbase/blob/main/bench/footprint.ts"
         >
           bench/footprint.ts

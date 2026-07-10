@@ -25,7 +25,7 @@ const SECTIONS = [
 
 function H2({ id, children }: { id: string; children: React.ReactNode }) {
   return (
-    <h2 id={id} className="scroll-mt-24 border-t border-zinc-800/80 pt-10 text-2xl font-bold tracking-tight first:border-0 first:pt-0">
+    <h2 id={id} className="scroll-mt-24 border-t border-border pt-10 text-2xl font-bold tracking-tight first:border-0 first:pt-0">
       {children}
     </h2>
   )
@@ -36,10 +36,10 @@ function Pre({ children, lang = 'bash' }: { children: string; lang?: string }) {
 }
 
 function P({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <p className={`leading-relaxed text-zinc-400${className ? ' ' + className : ''}`}>{children}</p>
+  return <p className={`leading-relaxed text-muted${className ? ' ' + className : ''}`}>{children}</p>
 }
 
-const IC = 'rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-[0.85em] text-emerald-300'
+const IC = 'rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[0.85em] text-accent'
 
 export const metadata = {
   title: 'Docs',
@@ -54,10 +54,10 @@ export default function Docs() {
       <SiteNav />
       <div className="mx-auto flex max-w-6xl gap-12 px-6 py-12">
         <aside className="sticky top-24 hidden h-fit w-52 shrink-0 lg:block">
-          <div className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Documentation</div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-subtle">Documentation</div>
           <nav className="mt-4 space-y-1">
             {SECTIONS.map((s) => (
-              <a key={s.id} href={`#${s.id}`} className="block rounded-md px-3 py-1.5 text-sm text-zinc-400 hover:bg-zinc-800/60 hover:text-white">
+              <a key={s.id} href={`#${s.id}`} className="block rounded-md px-3 py-1.5 text-sm text-muted hover:bg-surface-2 hover:text-fg">
                 {s.label}
               </a>
             ))}
@@ -70,11 +70,11 @@ export default function Docs() {
           <H2 id="why">Why tinbase</H2>
           <P>
             tinbase came out of{' '}
-            <a className="text-emerald-400 hover:text-emerald-300" href="https://lifo.sh">
+            <a className="text-accent hover:text-accent-hover" href="https://lifo.sh">
               lifo
             </a>{' '}
             and{' '}
-            <a className="text-emerald-400 hover:text-emerald-300" href="https://rapidnative.com">
+            <a className="text-accent hover:text-accent-hover" href="https://rapidnative.com">
               RapidNative
             </a>{' '}
             with a hard goal: run an entire dev stack — database, auth, storage, realtime — in the
@@ -97,9 +97,9 @@ export default function Docs() {
             protocol, Edge Functions, and the Studio admin API — and every one of them sits on a single swappable{' '}
             <code className={IC}>DbEngine</code> adapter. Swap the engine (PGlite / native / pg-mem) without changing a
             line above it. In Node the handler is wrapped in an HTTP + WebSocket server; in the browser you call it
-            in-process — see <Link className="text-emerald-400 hover:text-emerald-300" href="/browser">running in the browser</Link>.
+            in-process — see <Link className="text-accent hover:text-accent-hover" href="/browser">running in the browser</Link>.
           </P>
-          <div className="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/60 p-5">
+          <div className="mt-4 rounded-lg border border-border bg-surface p-5">
             <ArchitectureDiagram />
           </div>
 
@@ -140,36 +140,36 @@ tinbase db diff    # DDL for out-of-migration schema changes
 
           <H2 id="engines">Engines</H2>
           <P>
-            <strong className="text-zinc-200">native</strong> (default on macOS/Linux) runs embedded
+            <strong className="text-fg">native</strong> (default on macOS/Linux) runs embedded
             native Postgres 17. The first run downloads platform binaries (~12 MB, cached in{' '}
             <code className={IC}>~/.cache/tinbase</code>), then <code className={IC}>initdb</code>{' '}
             with memory-lean settings. ~59 MB of RAM at boot. It listens only on a private unix
             socket (0700 directory, trust auth) — never TCP. macOS and Linux on x64/arm64.
           </P>
           <P>
-            <strong className="text-zinc-200">wasm</strong> (the default on Windows) runs PGlite —
+            <strong className="text-fg">wasm</strong> (the default on Windows) runs PGlite —
             Postgres compiled to WebAssembly. Zero setup, runs anywhere Node runs including the
             browser. Its WASM heap sits around ~575–650 MB and does not shrink under load.
           </P>
           <P>
-            <strong className="text-zinc-200">pgmem</strong> is an ultralight, pure-JS, in-memory
-            engine via <a className="underline decoration-zinc-700 underline-offset-2 hover:text-zinc-300" href="https://www.npmjs.com/package/@tinbase/pg-mem">@tinbase/pg-mem</a> —
-            our fork of <a className="underline decoration-zinc-700 underline-offset-2 hover:text-zinc-300" href="https://github.com/oguimbal/pg-mem">pg-mem</a> —
-            with <strong className="text-zinc-200">no WASM</strong>, the lightest
+            <strong className="text-fg">pgmem</strong> is an ultralight, pure-JS, in-memory
+            engine via <a className="underline decoration-border underline-offset-2 hover:text-fg" href="https://www.npmjs.com/package/@tinbase/pg-mem">@tinbase/pg-mem</a> —
+            our fork of <a className="underline decoration-border underline-offset-2 hover:text-fg" href="https://github.com/oguimbal/pg-mem">pg-mem</a> —
+            with <strong className="text-fg">no WASM</strong>, the lightest
             option for the browser (RapidNative local-dev and previews). The fork adds the Postgres
-            surface real projects rely on — <strong className="text-zinc-200">PL/pgSQL, triggers,
+            surface real projects rely on — <strong className="text-fg">PL/pgSQL, triggers,
             row-level-security policies, correlated subqueries, <code className={IC}>information_schema</code>{' '}
             constraints, MERGE, range/full-text types, and declarative partitioning</strong> — so a full
-            Supabase-style bootstrap and real migration sets apply <strong className="text-zinc-200">unchanged,
+            Supabase-style bootstrap and real migration sets apply <strong className="text-fg">unchanged,
             nothing skipped</strong>. It runs the REST CRUD surface, email/password auth,{' '}
-            <strong className="text-zinc-200">edge functions, realtime (broadcast/presence +{' '}
+            <strong className="text-fg">edge functions, realtime (broadcast/presence +{' '}
             <code className={IC}>postgres_changes</code>), and database webhooks</strong>. Caveats vs the
             Postgres engines: <code className={IC}>LISTEN</code>/<code className={IC}>NOTIFY</code> are no-ops,
             so realtime/webhook change events are synthesized in JS by the REST layer (every write passes
             through it in-process); the engine runs with superuser rights, so{' '}
-            <strong className="text-zinc-200">RLS policies are created but not enforced per-request</strong>{' '}
-            (events delivered unfiltered), and <strong className="text-zinc-200">cron</strong> and{' '}
-            <strong className="text-zinc-200">pgmq</strong> are absent. Local-dev / preview only — never production.
+            <strong className="text-fg">RLS policies are created but not enforced per-request</strong>{' '}
+            (events delivered unfiltered), and <strong className="text-fg">cron</strong> and{' '}
+            <strong className="text-fg">pgmq</strong> are absent. Local-dev / preview only — never production.
           </P>
           <P>
             The wasm and native engines run identical bootstrap, migrations, RLS, and realtime CDC.
@@ -191,27 +191,27 @@ tinbase db diff    # DDL for out-of-migration schema changes
             A built-in dashboard ships at <code className={IC}>/_/</code>, shaped like Supabase
             Studio (React + Radix + Tailwind). Log in with the{' '}
             <code className={IC}>service_role</code> key printed at startup. See the{' '}
-            <Link className="text-emerald-400 hover:text-emerald-300" href="/studio">full Studio tour with screenshots</Link>:
+            <Link className="text-accent hover:text-accent-hover" href="/studio">full Studio tour with screenshots</Link>:
           </P>
-          <ul className="ml-5 list-disc space-y-1 text-neutral-400 text-zinc-400">
+          <ul className="ml-5 list-disc space-y-1 text-muted text-muted">
             <li>
-              <b className="text-zinc-200">Table Editor</b> — browse tables with pagination and row
+              <b className="text-fg">Table Editor</b> — browse tables with pagination and row
               counts; insert, edit, and delete rows
             </li>
             <li>
-              <b className="text-zinc-200">SQL Editor</b> — run SQL with result grids and Postgres
+              <b className="text-fg">SQL Editor</b> — run SQL with result grids and Postgres
               error details
             </li>
             <li>
-              <b className="text-zinc-200">Authentication</b> — list, create, delete users, reset
+              <b className="text-fg">Authentication</b> — list, create, delete users, reset
               passwords
             </li>
             <li>
-              <b className="text-zinc-200">Storage</b> — create/delete buckets, upload/delete
+              <b className="text-fg">Storage</b> — create/delete buckets, upload/delete
               objects, toggle public access
             </li>
             <li>
-              <b className="text-zinc-200">Database</b> — stats overview and applied migrations
+              <b className="text-fg">Database</b> — stats overview and applied migrations
             </li>
           </ul>
           <P>
@@ -245,21 +245,21 @@ Deno.serve(async (req) => {
             natively rather than needing pg_net/pg_cron/pgmq installed.
           </P>
           <P>
-            <b className="text-zinc-200">Database webhooks</b> fire an HTTP request when rows change,
+            <b className="text-fg">Database webhooks</b> fire an HTTP request when rows change,
             with Supabase&apos;s exact payload (<code className={IC}>type/table/schema/record/old_record</code>).
             Configure via <code className={IC}>createBackend(&#123; webhooks &#125;)</code>,{' '}
             <code className={IC}>backend.webhooks.register()</code>, or <code className={IC}>supabase/webhooks.json</code>.
           </P>
           <P>
-            <b className="text-zinc-200">Cron</b> — drop-in with pg_cron&apos;s API:{' '}
+            <b className="text-fg">Cron</b> — drop-in with pg_cron&apos;s API:{' '}
             <code className={IC}>select cron.schedule(&apos;nightly&apos;, &apos;0 0 * * *&apos;, &apos;delete from logs&apos;)</code>{' '}
             (also the <code className={IC}>&apos;N seconds&apos;</code> form), <code className={IC}>cron.unschedule(...)</code>,
             and the <code className={IC}>cron.job</code> / <code className={IC}>cron.job_run_details</code> tables.
-            Schedules match in <b className="text-zinc-200">UTC</b>, like hosted pg_cron. An in-process scheduler
+            Schedules match in <b className="text-fg">UTC</b>, like hosted pg_cron. An in-process scheduler
             runs due jobs and logs each run.
           </P>
           <P>
-            <b className="text-zinc-200">HTTP from SQL</b> — a pg_net emulation:{' '}
+            <b className="text-fg">HTTP from SQL</b> — a pg_net emulation:{' '}
             <code className={IC}>net.http_post</code> / <code className={IC}>net.http_get</code> /{' '}
             <code className={IC}>net.http_delete(...)</code> enqueue a request that an in-process worker sends,
             recording the reply in <code className={IC}>net._http_response</code>. So the common Supabase pattern —
@@ -271,7 +271,7 @@ Deno.serve(async (req) => {
             privileges (RLS bypassed), and are available on the wasm and native engines, not pg-mem.
           </P>
           <P>
-            <b className="text-zinc-200">Queues</b> — a pgmq subset: call from SQL or the client.
+            <b className="text-fg">Queues</b> — a pgmq subset: call from SQL or the client.
           </P>
           <Pre lang="ts">{`await supabase.schema('pgmq').rpc('send', { queue_name: 'jobs', msg: { task: 'email' } })
 const { data } = await supabase.schema('pgmq').rpc('read', { queue_name: 'jobs', vt: 30, qty: 5 })`}</Pre>
@@ -302,7 +302,7 @@ const supabase = createClient<Database>(url, anonKey)  // fully typed queries`}<
             The core is a pure <code className={IC}>(Request) =&gt; Response</code> fetch handler.
             Serve it over HTTP in Node, or hand it to supabase-js as a custom fetch and run the whole
             backend in-process — in the browser, PGlite persists to IndexedDB/OPFS. There&apos;s a{' '}
-            <Link className="text-emerald-400 hover:text-emerald-300" href="/browser">dedicated guide to running in the browser</Link>{' '}
+            <Link className="text-accent hover:text-accent-hover" href="/browser">dedicated guide to running in the browser</Link>{' '}
             (including the lighter pure-JS pg-mem engine):
           </P>
           <Pre lang="ts">{`import { createBackend } from 'tinbase'
@@ -319,13 +319,13 @@ const supabase = createClient('http://localhost', backend.anonKey, {
           <H2 id="feature-completeness">Feature completeness</H2>
           <P>
             Where tinbase stands against the Supabase surface, mapped from the{' '}
-            <a className="text-emerald-400 hover:text-emerald-300" href="https://github.com/tinbase/tinbase/blob/main/ROADMAP.md">
+            <a className="text-accent hover:text-accent-hover" href="https://github.com/tinbase/tinbase/blob/main/ROADMAP.md">
               roadmap
             </a>
-. <span className="text-emerald-400">✓ Yes</span>{' '}
+. <span className="text-accent">✓ Yes</span>{' '}
             means it&apos;s implemented and covered by the test suite against the real supabase-js;{' '}
-            <span className="text-amber-400">◑ Partial</span> and{' '}
-            <span className="text-zinc-400">– Planned</span> are honest about the rest.
+            <span className="text-warn">◑ Partial</span> and{' '}
+            <span className="text-muted">– Planned</span> are honest about the rest.
           </P>
           <FeatureMatrix />
 
@@ -333,13 +333,13 @@ const supabase = createClient('http://localhost', backend.anonKey, {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-zinc-800 text-left text-zinc-300">
+                <tr className="border-b border-border text-left text-fg">
                   <th className="py-2 pr-4 font-semibold">Module</th>
                   <th className="py-2 pr-4 font-semibold">Coverage</th>
                   <th className="py-2 font-semibold">Notable gaps</th>
                 </tr>
               </thead>
-              <tbody className="text-zinc-400">
+              <tbody className="text-muted">
                 {[
                   ['Database (postgrest-js)', '~85%', 'aggregates in select, .explain(), .csv()'],
                   ['Auth (auth-js)', '~80%', 'MFA, SSO/SAML, phone auth'],
@@ -348,9 +348,9 @@ const supabase = createClient('http://localhost', backend.anonKey, {
                   ['Edge Functions', '~70%', 'npm:/jsr: import resolution, secrets'],
                   ['Type generation', '~85%', 'composite-type args, multi-schema'],
                 ].map(([m, c, g]) => (
-                  <tr key={m} className="border-b border-zinc-800/60">
-                    <td className="py-2 pr-4 text-zinc-200">{m}</td>
-                    <td className="py-2 pr-4 font-semibold text-emerald-400">{c}</td>
+                  <tr key={m} className="border-b border-border">
+                    <td className="py-2 pr-4 text-fg">{m}</td>
+                    <td className="py-2 pr-4 font-semibold text-accent">{c}</td>
                     <td className="py-2">{g}</td>
                   </tr>
                 ))}
@@ -363,10 +363,10 @@ const supabase = createClient('http://localhost', backend.anonKey, {
           </P>
           <P className="mt-3">
             Beyond the client SDK, the local platform features real projects rely on also work:{' '}
-            <b className="text-zinc-200">type generation</b>, <b className="text-zinc-200">RLS</b>{' '}
-            (enforced on REST, Storage, and realtime), <b className="text-zinc-200">database webhooks</b>,{' '}
-            <b className="text-zinc-200">cron</b>, <b className="text-zinc-200">queues (pgmq)</b>,{' '}
-            the <b className="text-zinc-200">Studio</b> dashboard, and Supabase-CLI migration
+            <b className="text-fg">type generation</b>, <b className="text-fg">RLS</b>{' '}
+            (enforced on REST, Storage, and realtime), <b className="text-fg">database webhooks</b>,{' '}
+            <b className="text-fg">cron</b>, <b className="text-fg">queues (pgmq)</b>,{' '}
+            the <b className="text-fg">Studio</b> dashboard, and Supabase-CLI migration
             conventions with <code className={IC}>db reset</code> / <code className={IC}>db diff</code>.
           </P>
 
@@ -377,7 +377,7 @@ const supabase = createClient('http://localhost', backend.anonKey, {
             whole process tree (vmmap) for native processes and the sum of docker stats for
             containers. Apple Silicon, macOS 15.
           </P>
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-6">
+          <div className="rounded-xl border border-border bg-surface p-6">
             <WeightChart />
           </div>
           <P>
@@ -388,17 +388,17 @@ const supabase = createClient('http://localhost', backend.anonKey, {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm">
               <thead>
-                <tr className="border-b border-zinc-800 text-left text-zinc-300">
+                <tr className="border-b border-border text-left text-fg">
                   <th className="py-2 pr-4 font-semibold"></th>
-                  <th className="py-2 pr-4 font-semibold text-emerald-400">tinbase (binary)</th>
-                  <th className="py-2 pr-4 font-semibold text-emerald-400">tinbase (native)</th>
-                  <th className="py-2 pr-4 font-semibold text-emerald-400">tinbase (pg-mem)</th>
-                  <th className="py-2 pr-4 font-semibold text-emerald-400">tinbase (wasm)</th>
+                  <th className="py-2 pr-4 font-semibold text-accent">tinbase (binary)</th>
+                  <th className="py-2 pr-4 font-semibold text-accent">tinbase (native)</th>
+                  <th className="py-2 pr-4 font-semibold text-accent">tinbase (pg-mem)</th>
+                  <th className="py-2 pr-4 font-semibold text-accent">tinbase (wasm)</th>
                   <th className="py-2 pr-4 font-semibold">PocketBase</th>
                   <th className="py-2 font-semibold">Supabase local</th>
                 </tr>
               </thead>
-              <tbody className="text-zinc-400">
+              <tbody className="text-muted">
                 {[
                   ['Database', 'real Postgres 17 + RLS', 'real Postgres 17 + RLS', 'in-memory, pure-JS', 'real Postgres (PGlite) + RLS', 'SQLite', 'Postgres 17'],
                   ['Memory at boot', '49 MB', '59 MB', '71 MB', '~610 MB', '15 MB', '1,441 MB'],
@@ -409,17 +409,17 @@ const supabase = createClient('http://localhost', backend.anonKey, {
                   ['1,000 inserts', '0.4 s', '0.5 s', '0.8 s', '0.8 s', '0.3 s', '1.1 s'],
                   ['1,000 filtered reads', '0.3 s', '0.4 s', '0.8 s', '0.9 s', '0.3 s', '1.0 s'],
                 ].map(([label, ...cells]) => (
-                  <tr key={label} className="border-b border-zinc-800/60">
-                    <td className="py-2 pr-4 font-medium text-zinc-200">{label}</td>
+                  <tr key={label} className="border-b border-border">
+                    <td className="py-2 pr-4 font-medium text-fg">{label}</td>
                     {cells.map((c, i) => (
-                      <td key={i} className={'py-2 pr-4' + (i < 4 ? ' text-zinc-200' : '')}>{c}</td>
+                      <td key={i} className={'py-2 pr-4' + (i < 4 ? ' text-fg' : '')}>{c}</td>
                     ))}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <P className="text-xs text-zinc-500">
+          <P className="text-xs text-subtle">
             The wasm figure is essentially PGlite&apos;s WASM heap, which measures anywhere in
             ~575–650 MB depending on GC timing — treat it as a band, not a point. pgmem is a pure-JS
             in-memory engine that runs PL/pgSQL, triggers and RLS-policy DDL (migrations apply unchanged),
@@ -428,11 +428,11 @@ const supabase = createClient('http://localhost', backend.anonKey, {
           </P>
           <P>
             Methodology, raw numbers, and a reproducible script live in the repo:{' '}
-            <a className="text-emerald-400 hover:text-emerald-300" href="https://github.com/tinbase/tinbase/blob/main/bench/footprint.ts">
+            <a className="text-accent hover:text-accent-hover" href="https://github.com/tinbase/tinbase/blob/main/bench/footprint.ts">
               bench/footprint.ts
             </a>{' '}
             and{' '}
-            <a className="text-emerald-400 hover:text-emerald-300" href="https://github.com/tinbase/tinbase/blob/main/bench/results.json">
+            <a className="text-accent hover:text-accent-hover" href="https://github.com/tinbase/tinbase/blob/main/bench/results.json">
               bench/results.json
             </a>
             .

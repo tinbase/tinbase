@@ -1,23 +1,79 @@
 @import "tailwindcss";
 
-/* tinbase is dark-only by design — it does not follow the system
-   color-scheme preference. Keep these tokens dark unconditionally and pin
-   color-scheme so native UI (scrollbars, form controls) stays dark too. */
+/* Class-based dark mode: a `.dark` on <html> flips the tokens below.
+   The theme is chosen by the inline script in layout.tsx (localStorage →
+   system preference), so there's no flash and it follows the OS by default. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Light theme (default) */
 :root {
-  --background: #09090b; /* zinc-950 — matches <body> bg + themeColor */
-  --foreground: #ededed;
+  --bg: #ffffff;
+  --surface: #fafafa;
+  --surface-2: #f4f4f5;
+  --border: #e4e4e7;
+  --strong: #d4d4d8;
+  --fg: #18181b;
+  --muted: #52525b;
+  --subtle: #71717a;
+  --accent: #059669;        /* emerald-600 — readable on white */
+  --accent-hover: #047857;  /* emerald-700 */
+  --accent-soft: #ecfdf5;   /* emerald-50 — diagram green panels */
+  --accent-line: #6ee7b7;   /* emerald-300 — their borders */
+  --info: #2563eb;          /* blue-600 — diagram accent */
+  --warn: #b45309;          /* amber-700 */
+  --warn-soft: rgba(180, 83, 9, 0.12);
+  color-scheme: light;
+}
+
+/* Dark theme */
+.dark {
+  --bg: #09090b;
+  --surface: rgba(24, 24, 27, 0.6);
+  --surface-2: #18181b;
+  --border: #27272a;
+  --strong: #3f3f46;
+  --fg: #f4f4f5;
+  --muted: #a1a1aa;
+  --subtle: #71717a;
+  --accent: #34d399;        /* emerald-400 */
+  --accent-hover: #6ee7b7;  /* emerald-300 */
+  --accent-soft: #0f2a1f;
+  --accent-line: #134e35;
+  --info: #93c5fd;
+  --warn: #fbbf24;          /* amber-400 */
+  --warn-soft: rgba(251, 191, 36, 0.15);
   color-scheme: dark;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-strong: var(--strong);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* shiki dual theme: light colors are inline; swap to dark under .dark */
+.shiki,
+.shiki span {
+  background: transparent !important;
+}
+:where(html.dark) .shiki,
+:where(html.dark) .shiki span {
+  color: var(--shiki-dark) !important;
 }

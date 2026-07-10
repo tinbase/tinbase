@@ -53,14 +53,14 @@ export default function StudioPage() {
     <>
       <SiteNav />
       <main className="mx-auto max-w-5xl px-6 py-16">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-emerald-400">Studio</p>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-accent">Studio</p>
         <h1 className="max-w-3xl text-balance text-4xl font-bold tracking-tight sm:text-5xl">
           A dashboard in the box
         </h1>
-        <p className="mt-5 max-w-2xl text-pretty text-lg text-zinc-400">
+        <p className="mt-5 max-w-2xl text-pretty text-lg text-muted">
           Every tinbase server serves a Supabase-Studio-style dashboard at{' '}
-          <code className="rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-sm text-emerald-300">/_/</code>. No extra
-          process, no separate install — sign in with the <span className="text-zinc-200">service_role</span> key printed
+          <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-sm text-accent">/_/</code>. No extra
+          process, no separate install — sign in with the <span className="text-fg">service_role</span> key printed
           at startup. Built with React, Radix, and Tailwind, compiled to a single self-contained HTML file.
         </p>
         <div className="mt-7 flex flex-wrap gap-3">
@@ -74,11 +74,11 @@ export default function StudioPage() {
           {SHOTS.map((s, i) => (
             <section key={s.src} className="scroll-mt-20" id={s.title.toLowerCase().replace(/\s+/g, '-')}>
               <div className="flex items-baseline gap-3">
-                <span className="font-mono text-sm text-zinc-600 tabular-nums">{String(i + 1).padStart(2, '0')}</span>
-                <h2 className="text-xl font-semibold text-zinc-100">{s.title}</h2>
+                <span className="font-mono text-sm text-subtle tabular-nums">{String(i + 1).padStart(2, '0')}</span>
+                <h2 className="text-xl font-semibold text-fg">{s.title}</h2>
               </div>
-              <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-zinc-400">{s.body}</p>
-              <div className="mt-5 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/60 shadow-2xl shadow-black/40">
+              <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-muted">{s.body}</p>
+              <div className="mt-5 overflow-hidden rounded-xl border border-border bg-surface shadow-2xl shadow-black/40">
                 <Image
                   src={s.src}
                   alt={`tinbase Studio — ${s.title}`}
@@ -92,15 +92,15 @@ export default function StudioPage() {
           ))}
         </div>
 
-        <div className="mt-16 rounded-xl border border-zinc-800 bg-zinc-900/60 p-6 text-center">
-          <p className="text-zinc-300">
+        <div className="mt-16 rounded-xl border border-border bg-surface p-6 text-center">
+          <p className="text-fg">
             Studio is one of the ways in — the same APIs power the SDK and your app.
           </p>
           <div className="mt-4 flex justify-center gap-3">
             <LinkButton href="/docs">Read the docs</LinkButton>
             <Link
               href="https://github.com/tinbase/tinbase"
-              className="inline-flex h-10 items-center rounded-lg border border-zinc-700 px-5 text-sm font-semibold text-zinc-200 hover:bg-zinc-800/60"
+              className="inline-flex h-10 items-center rounded-lg border border-strong px-5 text-sm font-semibold text-fg hover:bg-surface-2"
             >
               GitHub
             </Link>

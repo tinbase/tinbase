@@ -13,13 +13,12 @@ export async function Code({
 }) {
   const html = await codeToHtml(code, {
     lang,
-    theme: 'github-dark-default',
-    colorReplacements: { '#0d1117': 'transparent' },
+    themes: { light: 'github-light-default', dark: 'github-dark-default' },
   })
   return (
     <div
       className={cn(
-        'overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-900 p-5 font-mono text-[13px] leading-relaxed [&_pre]:!bg-transparent',
+        'overflow-x-auto rounded-xl border border-border bg-surface-2 p-5 font-mono text-[13px] leading-relaxed [&_pre]:!bg-transparent',
         className
       )}
       dangerouslySetInnerHTML={{ __html: html }}

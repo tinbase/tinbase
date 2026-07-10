@@ -91,9 +91,9 @@ export default function Home() {
             {'Supabase-compatible backend, without Docker · Open source (MIT)'}
           </Badge>
           <h1 className="mt-6 max-w-3xl text-balance text-5xl font-bold tracking-tight sm:text-6xl">
-            The Supabase-compatible backend that fits in a <span className="text-emerald-400">tin</span>
+            The Supabase-compatible backend that fits in a <span className="text-accent">tin</span>
           </h1>
-          <p className="mt-6 max-w-2xl text-pretty text-lg text-zinc-400">
+          <p className="mt-6 max-w-2xl text-pretty text-lg text-muted">
             Local Supabase dev without Docker — one process, real Postgres, and it even runs in the
             browser. The official supabase-js SDK works unchanged.
           </p>
@@ -103,18 +103,18 @@ export default function Home() {
               <GitHubIcon /> Star on GitHub
             </LinkButton>
           </div>
-          <code className="mt-8 rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2.5 font-mono text-sm text-emerald-300">
+          <code className="mt-8 rounded-lg border border-border bg-surface-2 px-4 py-2.5 font-mono text-sm text-accent">
             npx tinbase start
           </code>
         </section>
 
         {/* benchmark */}
-        <section id="benchmarks" className="scroll-mt-20 border-t border-zinc-800/80 py-20">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-emerald-400">
+        <section id="benchmarks" className="scroll-mt-20 border-t border-border py-20">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-accent">
             Benchmark
           </p>
           <h2 className="text-3xl font-bold tracking-tight">A weight class you can deploy anywhere</h2>
-          <p className="mt-3 max-w-2xl text-zinc-400">
+          <p className="mt-3 max-w-2xl text-muted">
             The Supabase local stack is a 12-container, 2.3 GB Docker install. tinbase serves the same
             APIs from a single file at a fraction of the memory.
           </p>
@@ -123,38 +123,38 @@ export default function Home() {
           </Card>
           <div className="mt-6 grid gap-4 sm:grid-cols-3">
             <Card>
-              <div className="text-3xl font-bold text-emerald-400">58 MB</div>
-              <div className="mt-1 text-sm text-zinc-400">single executable, no runtime prerequisite</div>
+              <div className="text-3xl font-bold text-accent">58 MB</div>
+              <div className="mt-1 text-sm text-muted">single executable, no runtime prerequisite</div>
             </Card>
             <Card>
-              <div className="text-3xl font-bold text-emerald-400">~2 s</div>
-              <div className="mt-1 text-sm text-zinc-400">from command to serving requests</div>
+              <div className="text-3xl font-bold text-accent">~2 s</div>
+              <div className="mt-1 text-sm text-muted">from command to serving requests</div>
             </Card>
             <Card>
-              <div className="text-3xl font-bold text-emerald-400">168 / 168</div>
-              <div className="mt-1 text-sm text-zinc-400">integration tests pass · both engines</div>
+              <div className="text-3xl font-bold text-accent">168 / 168</div>
+              <div className="mt-1 text-sm text-muted">integration tests pass · both engines</div>
             </Card>
           </div>
         </section>
 
         {/* code */}
-        <section className="border-t border-zinc-800/80 py-20">
+        <section className="border-t border-border py-20">
           <div className="grid items-center gap-12 lg:grid-cols-2">
             <div>
               <h2 className="text-3xl font-bold tracking-tight">Keep the SDK you already know</h2>
-              <p className="mt-4 text-zinc-400">
+              <p className="mt-4 text-muted">
                 tinbase implements the PostgREST query grammar (filters, embedded resources, RPC),
                 GoTrue auth flows, the Storage API, and the Realtime Phoenix protocol — verified by
                 running the official SDK against it.
               </p>
-              <p className="mt-4 text-zinc-400">
+              <p className="mt-4 text-muted">
                 Row Level Security behaves exactly like hosted Supabase: every request runs with your
-                JWT claims applied, so <code className="font-mono text-sm text-emerald-300">auth.uid()</code>{' '}
+                JWT claims applied, so <code className="font-mono text-sm text-accent">auth.uid()</code>{' '}
                 policies work as-is.
               </p>
               <Link
                 href="/docs"
-                className="mt-6 inline-block text-sm font-semibold text-emerald-400 hover:text-emerald-300"
+                className="mt-6 inline-block text-sm font-semibold text-accent hover:text-accent-hover"
               >
                 Read the docs →
               </Link>
@@ -164,11 +164,11 @@ export default function Home() {
         </section>
 
         {/* architecture */}
-        <section className="border-t border-zinc-800/80 py-20">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-emerald-400">Architecture</p>
+        <section className="border-t border-border py-20">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-accent">Architecture</p>
           <h2 className="text-3xl font-bold tracking-tight">One fetch handler, three engines</h2>
-          <p className="mt-3 max-w-2xl text-zinc-400">
-            supabase-js talks to a single <code className="font-mono text-sm text-emerald-300">(Request) ⇒ Response</code>{' '}
+          <p className="mt-3 max-w-2xl text-muted">
+            supabase-js talks to a single <code className="font-mono text-sm text-accent">(Request) ⇒ Response</code>{' '}
             handler that fans out to the service handlers, all sitting on one swappable database engine. The same handler
             is an HTTP + WebSocket server in Node, or runs in-process in a browser tab.
           </p>
@@ -178,15 +178,15 @@ export default function Home() {
         </section>
 
         {/* studio teaser */}
-        <section className="border-t border-zinc-800/80 py-20">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-emerald-400">Studio</p>
+        <section className="border-t border-border py-20">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-accent">Studio</p>
           <h2 className="text-3xl font-bold tracking-tight">A dashboard in the box</h2>
-          <p className="mt-3 max-w-2xl text-zinc-400">
-            A Supabase-Studio-style dashboard ships at <code className="font-mono text-sm text-emerald-300">/_/</code> —
+          <p className="mt-3 max-w-2xl text-muted">
+            A Supabase-Studio-style dashboard ships at <code className="font-mono text-sm text-accent">/_/</code> —
             table editor, SQL, auth, RLS policies, storage, and live logs. No extra process.
           </p>
           <Link href="/studio" className="group mt-8 block">
-            <Card className="overflow-hidden p-0 transition-colors group-hover:border-zinc-700">
+            <Card className="overflow-hidden p-0 transition-colors group-hover:border-strong">
               <Image
                 src="/screenshots/table-editor.png"
                 alt="tinbase Studio table editor"
@@ -196,31 +196,31 @@ export default function Home() {
                 unoptimized
               />
             </Card>
-            <span className="mt-4 inline-block text-sm font-semibold text-emerald-400 group-hover:text-emerald-300">
+            <span className="mt-4 inline-block text-sm font-semibold text-accent group-hover:text-accent-hover">
               Tour the Studio →
             </span>
           </Link>
         </section>
 
         {/* why it was built */}
-        <section className="border-t border-zinc-800/80 py-20">
+        <section className="border-t border-border py-20">
           <div className="mx-auto max-w-3xl text-center">
             <h2 className="text-3xl font-bold tracking-tight">Why tinbase exists</h2>
-            <p className="mt-5 leading-relaxed text-zinc-400">
+            <p className="mt-5 leading-relaxed text-muted">
               tinbase came out of{' '}
-              <a href="https://lifo.sh" className="font-medium text-emerald-400 hover:text-emerald-300">
+              <a href="https://lifo.sh" className="font-medium text-accent hover:text-accent-hover">
                 lifo
               </a>{' '}
               and{' '}
-              <a href="https://rapidnative.com" className="font-medium text-emerald-400 hover:text-emerald-300">
+              <a href="https://rapidnative.com" className="font-medium text-accent hover:text-accent-hover">
                 RapidNative
               </a>{' '}
-              with a hard goal: run an <span className="text-zinc-200">entire dev stack — database, auth,
+              with a hard goal: run an <span className="text-fg">entire dev stack — database, auth,
               storage, realtime — in the browser and on phones</span>, with no VMs and no cloud behind it.
               The first step was cutting the memory overhead of running that backend locally at all; the
               next was making the very same backend run in-process, inside a browser tab.
             </p>
-            <p className="mt-4 leading-relaxed text-zinc-400">
+            <p className="mt-4 leading-relaxed text-muted">
               That is why every service is a pure fetch handler and the database can be pure JavaScript.
               Along the way it became something else too: a Docker-free, drop-in replacement for local
               Supabase development that covers most use cases — so it is open source for everyone.
@@ -229,7 +229,7 @@ export default function Home() {
         </section>
 
         {/* features */}
-        <section className="border-t border-zinc-800/80 py-20">
+        <section className="border-t border-border py-20">
           <div className="flex items-center gap-3">
             <Image src="/logo.svg" alt="" width={32} height={32} aria-hidden="true" />
             <h2 className="text-3xl font-bold tracking-tight">Why tinbase</h2>
@@ -237,47 +237,47 @@ export default function Home() {
           <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {FEATURES.map((f) => (
               <Card key={f.title}>
-                <span className="flex size-9 items-center justify-center rounded-lg border border-emerald-500/20 bg-emerald-500/10 text-emerald-400">
+                <span className="flex size-9 items-center justify-center rounded-lg border border-emerald-500/20 bg-emerald-500/10 text-accent">
                   <FeatureIcon name={f.icon} className="size-5" />
                 </span>
-                <h3 className="mt-4 font-semibold text-emerald-400">{f.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-zinc-400">{f.body}</p>
+                <h3 className="mt-4 font-semibold text-accent">{f.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-muted">{f.body}</p>
               </Card>
             ))}
           </div>
         </section>
       </main>
 
-      <footer className="border-t border-zinc-800/80 py-10">
+      <footer className="border-t border-border py-10">
         <div className="mx-auto max-w-6xl space-y-6 px-6">
-          <div className="flex flex-wrap items-center gap-x-8 gap-y-2 text-sm text-zinc-500">
-            <span className="text-xs font-semibold uppercase tracking-wider text-zinc-600">
+          <div className="flex flex-wrap items-center gap-x-8 gap-y-2 text-sm text-subtle">
+            <span className="text-xs font-semibold uppercase tracking-wider text-subtle">
               Related projects
             </span>
-            <a href="https://lifo.sh" className="hover:text-zinc-300">
-              <span className="font-medium text-zinc-300">Lifo</span> — Linux APIs in the browser
+            <a href="https://lifo.sh" className="hover:text-fg">
+              <span className="font-medium text-fg">Lifo</span> — Linux APIs in the browser
             </a>
-            <span className="text-xs font-semibold uppercase tracking-wider text-zinc-600">
+            <span className="text-xs font-semibold uppercase tracking-wider text-subtle">
               Used by
             </span>
-            <a href="https://rapidnative.com" className="hover:text-zinc-300">
-              <span className="font-medium text-zinc-300">RapidNative</span> — Expo apps, full-stack in the browser
+            <a href="https://rapidnative.com" className="hover:text-fg">
+              <span className="font-medium text-fg">RapidNative</span> — Expo apps, full-stack in the browser
             </a>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-zinc-500">
+          <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-subtle">
           <span>
             Built by{' '}
-            <a href="https://x.com/sanketsahu" className="font-medium text-zinc-300 hover:text-white">
+            <a href="https://x.com/sanketsahu" className="font-medium text-fg hover:text-fg">
               Sanket Sahu (@sanketsahu)
             </a>{' '}
             · MIT
           </span>
           <div className="flex items-center gap-6">
-            <Link href="/docs" className="hover:text-zinc-300">Docs</Link>
-            <a href="/docs#benchmarks" className="hover:text-zinc-300">
+            <Link href="/docs" className="hover:text-fg">Docs</Link>
+            <a href="/docs#benchmarks" className="hover:text-fg">
               Benchmarks
             </a>
-            <a href="https://x.com/sanketsahu" aria-label="Sanket Sahu on X" className="hover:text-zinc-300">
+            <a href="https://x.com/sanketsahu" aria-label="Sanket Sahu on X" className="hover:text-fg">
               <svg viewBox="0 0 24 24" fill="currentColor" className="size-4" aria-hidden="true">
                 <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
               </svg>
@@ -285,7 +285,7 @@ export default function Home() {
             <a
               href="https://github.com/sanketsahu"
               aria-label="Sanket Sahu on GitHub"
-              className="flex items-center hover:text-zinc-300"
+              className="flex items-center hover:text-fg"
             >
               <GitHubIcon />
             </a>
