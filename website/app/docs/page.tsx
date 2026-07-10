@@ -153,17 +153,23 @@ tinbase db diff    # DDL for out-of-migration schema changes
           </P>
           <P>
             <strong className="text-zinc-200">pgmem</strong> is an ultralight, pure-JS, in-memory
-            subset via <a className="underline decoration-zinc-700 underline-offset-2 hover:text-zinc-300" href="https://github.com/oguimbal/pg-mem">pg-mem</a> —
-            a <strong className="text-zinc-200">~3.6 MB install with no WASM</strong>, the lightest
-            option for the browser (RapidNative local-dev and previews). It runs the REST CRUD surface,
-            email/password auth, <strong className="text-zinc-200">edge functions, realtime
-            (broadcast/presence + <code className={IC}>postgres_changes</code>), and database webhooks</strong>.
-            pg-mem has no triggers or LISTEN/NOTIFY, so realtime and webhook change events are
-            synthesized in JS by the REST layer (every write passes through it in-process). What&apos;s{' '}
-            <em>not</em> here: <strong className="text-zinc-200">RLS</strong> (so realtime/webhook events
-            are delivered unfiltered, not per-subscriber), <strong className="text-zinc-200">cron</strong>,
-            and <strong className="text-zinc-200">pgmq</strong> — RLS DDL in migrations is skipped, not
-            fatal. Local-dev / preview only — never production.
+            engine via <a className="underline decoration-zinc-700 underline-offset-2 hover:text-zinc-300" href="https://www.npmjs.com/package/@tinbase/pg-mem">@tinbase/pg-mem</a> —
+            our fork of <a className="underline decoration-zinc-700 underline-offset-2 hover:text-zinc-300" href="https://github.com/oguimbal/pg-mem">pg-mem</a> —
+            with <strong className="text-zinc-200">no WASM</strong>, the lightest
+            option for the browser (RapidNative local-dev and previews). The fork adds the Postgres
+            surface real projects rely on — <strong className="text-zinc-200">PL/pgSQL, triggers,
+            row-level-security policies, correlated subqueries, <code className={IC}>information_schema</code>{' '}
+            constraints, MERGE, range/full-text types, and declarative partitioning</strong> — so a full
+            Supabase-style bootstrap and real migration sets apply <strong className="text-zinc-200">unchanged,
+            nothing skipped</strong>. It runs the REST CRUD surface, email/password auth,{' '}
+            <strong className="text-zinc-200">edge functions, realtime (broadcast/presence +{' '}
+            <code className={IC}>postgres_changes</code>), and database webhooks</strong>. Caveats vs the
+            Postgres engines: <code className={IC}>LISTEN</code>/<code className={IC}>NOTIFY</code> are no-ops,
+            so realtime/webhook change events are synthesized in JS by the REST layer (every write passes
+            through it in-process); the engine runs with superuser rights, so{' '}
+            <strong className="text-zinc-200">RLS policies are created but not enforced per-request</strong>{' '}
+            (events delivered unfiltered), and <strong className="text-zinc-200">cron</strong> and{' '}
+            <strong className="text-zinc-200">pgmq</strong> are absent. Local-dev / preview only — never production.
           </P>
           <P>
             The wasm and native engines run identical bootstrap, migrations, RLS, and realtime CDC.
@@ -394,7 +400,7 @@ const supabase = createClient('http://localhost', backend.anonKey, {
               </thead>
               <tbody className="text-zinc-400">
                 {[
-                  ['Database', 'real Postgres 17 + RLS', 'real Postgres 17 + RLS', 'in-memory subset', 'real Postgres (PGlite) + RLS', 'SQLite', 'Postgres 17'],
+                  ['Database', 'real Postgres 17 + RLS', 'real Postgres 17 + RLS', 'in-memory, pure-JS', 'real Postgres (PGlite) + RLS', 'SQLite', 'Postgres 17'],
                   ['Memory at boot', '49 MB', '59 MB', '71 MB', '~610 MB', '15 MB', '1,441 MB'],
                   ['Memory under load', '66 MB', '100 MB', '185 MB', '~640 MB', '24 MB', '1,626 MB'],
                   ['Data on disk (1k rows)', '39 MB', '39 MB', '0 (in-memory)', '40 MB', '7 MB', '70 MB'],
@@ -415,8 +421,9 @@ const supabase = createClient('http://localhost', backend.anonKey, {
           </div>
           <P className="text-xs text-zinc-500">
             The wasm figure is essentially PGlite&apos;s WASM heap, which measures anywhere in
-            ~575–650 MB depending on GC timing — treat it as a band, not a point. pg-mem is a pure-JS
-            in-memory subset (no RLS, cron, or pgmq; realtime/webhooks work but deliver unfiltered) but
+            ~575–650 MB depending on GC timing — treat it as a band, not a point. pgmem is a pure-JS
+            in-memory engine that runs PL/pgSQL, triggers and RLS-policy DDL (migrations apply unchanged),
+            though as a superuser so RLS isn&apos;t enforced per-request, and cron/pgmq are absent — but
             a 3.6 MB install with no WASM, the lightest option for the browser.
           </P>
           <P>

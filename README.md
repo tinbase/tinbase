@@ -4,7 +4,7 @@
 
 Local Supabase dev without Docker — one process, real Postgres, and it even runs in the browser. It speaks the same wire protocols as hosted Supabase, so the **official `@supabase/supabase-js` SDK works unchanged** - REST, Auth, Storage, and Realtime.
 
-A pure-JS backend built on [PGlite](https://pglite.dev) (Postgres compiled to WASM), with an embedded-native-Postgres and an ultralight pure-JS ([pg-mem](https://github.com/oguimbal/pg-mem)) engine too. One command, real Row Level Security, and 1:1 with Supabase's APIs and migration conventions.
+A pure-JS backend built on [PGlite](https://pglite.dev) (Postgres compiled to WASM), with an embedded-native-Postgres and an ultralight pure-JS ([`@tinbase/pg-mem`](https://www.npmjs.com/package/@tinbase/pg-mem)) engine too. One command, real Row Level Security, and 1:1 with Supabase's APIs and migration conventions.
 
 > [!WARNING]
 > **Alpha — not production-ready yet.** Great for local development, prototypes, and embedded/browser use.
@@ -15,7 +15,7 @@ npx tinbase start
 
 - **No Docker, no external services.** One runtime dependency: `@electric-sql/pglite`.
 - **Real Postgres semantics.** RLS policies, `auth.uid()`, triggers, FKs - it is Postgres.
-- **Three engines, one API.** Default is embedded native Postgres 17 (macOS/Linux): ~59 MB of RAM at boot, PocketBase-class footprint, zero semantic differences; the first run downloads ~12 MB of binaries. `--engine wasm` runs PGlite (Postgres compiled to WASM) instead - portable, browser-ready, and the default on Windows. `--engine pgmem` is an ultralight pure-JS in-memory subset for local dev / previews - see [Engines](#engines).
+- **Three engines, one API.** Default is embedded native Postgres 17 (macOS/Linux): ~59 MB of RAM at boot, PocketBase-class footprint, zero semantic differences; the first run downloads ~12 MB of binaries. `--engine wasm` runs PGlite (Postgres compiled to WASM) instead - portable, browser-ready, and the default on Windows. `--engine pgmem` is an ultralight pure-JS in-memory engine for local dev / previews - see [Engines](#engines).
 - **Supabase CLI migration conventions.** Reads `supabase/migrations/*.sql` and `supabase/seed.sql`; tracks them in `supabase_migrations.schema_migrations`. Your migration files stay portable to hosted Supabase.
 - **Runs real projects unchanged.** A project's `CREATE EXTENSION` statements for extensions tinbase can't install (pg_cron, pg_net, http, hypopg, …) are skipped rather than aborting; `CREATE INDEX CONCURRENTLY` is applied without the (transaction-illegal) `CONCURRENTLY`; each migration runs with a fresh `search_path` like the Supabase CLI; and Vault, pgmq, cron, pg_net, and `moddatetime` are emulated. As a test, [Cap-go/capgo](https://github.com/Cap-go/capgo)'s **335 migrations + seed apply and query cleanly**.
 - **Browser-ready core.** Every service is a pure `(Request) => Response` fetch handler. In Node it's served over HTTP; in the browser you can hand it to supabase-js as a custom `fetch` and run the whole backend in-process (PGlite already runs in the browser via IndexedDB/OPFS).
@@ -72,7 +72,7 @@ tinbase db diff    # DDL for schema changes not yet in migrations (-f <name> to 
 - **native** (default on macOS/Linux): embedded native Postgres 17. First run downloads platform binaries (~12 MB, from [theseus-rs/postgresql-binaries](https://github.com/theseus-rs/postgresql-binaries), cached in `~/.cache/tinbase`), then `initdb` with memory-lean settings. ~59 MB RAM at boot. Listens only on a private unix socket (0700 dir, trust auth) - never TCP. macOS/Linux on x64/arm64.
 - **wasm** (default on Windows): PGlite. Zero setup, runs anywhere Node runs - and in the browser. Its WASM heap sits around ~575-650 MB and does not shrink under load.
 
-- **pgmem** (`--engine pgmem`): an ultralight, pure-JS, in-memory subset via [pg-mem](https://github.com/oguimbal/pg-mem) — **~3.6 MB install, no WASM**, so it's the lightest option for the browser (RapidNative local-dev / previews). Runs the REST CRUD surface, email/password auth, **edge functions, realtime (broadcast/presence + `postgres_changes`), and database webhooks**. pg-mem has no triggers or LISTEN/NOTIFY, so realtime/webhook change events are synthesized in JS by the REST layer (every write goes through it in-process). What's *not* here: **RLS** (so realtime/webhook events are delivered unfiltered, not per-subscriber), **cron**, and **pgmq** - RLS DDL in migrations is skipped, not fatal. Local-dev / preview only — never production.
+- **pgmem** (`--engine pgmem`): an ultralight, pure-JS, in-memory engine via [`@tinbase/pg-mem`](https://www.npmjs.com/package/@tinbase/pg-mem) — our fork of [pg-mem](https://github.com/oguimbal/pg-mem) — **no WASM**, so it's the lightest option for the browser (RapidNative local-dev / previews). The fork adds the Postgres surface real projects rely on: **PL/pgSQL, triggers, row-level-security policies, correlated subqueries, `information_schema` constraints, MERGE, range/full-text types, and declarative partitioning**. A full Supabase-style bootstrap and real migration sets now apply **unchanged — nothing skipped** (RLS/trigger/PL-pgSQL DDL runs). Runs the REST CRUD surface, email/password auth, **edge functions, realtime (broadcast/presence + `postgres_changes`), and database webhooks**. Caveats vs the Postgres engines: `LISTEN`/`NOTIFY` are no-ops, so realtime/webhook change events are synthesized in JS by the REST layer (every write goes through it in-process); the engine runs with superuser rights, so **RLS policies are created but not enforced per-request** (events are delivered unfiltered, not per-subscriber); **cron** and **pgmq** are absent. Local-dev / preview only — never production.
 
 The wasm and native engines run the identical bootstrap, migrations, RLS, and realtime CDC - the test suite passes on both (`TINBASE_TEST_ENGINE=native npm test`).
 
@@ -178,7 +178,7 @@ Measured on an Apple Silicon Mac (48 GB), macOS 15. Same workload for all three:
 
 | | tinbase (single binary) | tinbase (native) | tinbase (pg-mem) | tinbase (wasm) | PocketBase v0.39.5 | Supabase local |
 | --- | --- | --- | --- | --- | --- | --- |
-| Database | real Postgres 17 + RLS | real Postgres 17 + RLS | in-memory subset¹ | real Postgres (PGlite) + RLS | SQLite | Postgres 17 |
+| Database | real Postgres 17 + RLS | real Postgres 17 + RLS | in-memory, pure-JS¹ | real Postgres (PGlite) + RLS | SQLite | Postgres 17 |
 | Runtime memory at boot | 49 MB | 59 MB | 71 MB | ~610 MB² | 15 MB | 1,441 MB |
 | Runtime memory after workload | 66 MB | 100 MB | 185 MB | ~640 MB² | 24 MB | 1,626 MB |
 | Data on disk (1k rows) | 39 MB | 39 MB | 0 (in-memory) | 40 MB | 7 MB | 70 MB |
@@ -187,7 +187,7 @@ Measured on an Apple Silicon Mac (48 GB), macOS 15. Same workload for all three:
 | 1,000 inserts | 0.4 s | 0.5 s | 0.8 s | 0.8 s | 0.3 s | 1.1 s |
 | 1,000 filtered reads | 0.3 s | 0.4 s | 0.8 s | 0.9 s | 0.3 s | 1.0 s |
 
-¹ **pg-mem** is a pure-JS in-memory subset (local dev / preview) — no RLS, cron, or pgmq (realtime/webhooks work but deliver unfiltered), but a **3.6 MB install** and pure JS (no WASM), the lightest option for the browser. See [Engines](#engines).
+¹ **pgmem** is a pure-JS in-memory engine (local dev / preview) via the [`@tinbase/pg-mem`](https://www.npmjs.com/package/@tinbase/pg-mem) fork. It now runs PL/pgSQL, triggers and RLS-policy DDL (migrations apply unchanged, nothing skipped), but the engine runs as superuser so RLS isn't enforced per-request (realtime/webhook events are unfiltered), and **cron**/**pgmq** are absent. Pure JS (no WASM), the lightest option for the browser. See [Engines](#engines).
 ² The wasm figure is essentially PGlite's WASM heap, which measures anywhere in ~575–650 MB depending on GC timing — treat it as a band, not a point. It does not shrink under load.
 ³ Native: Postgres 17 binaries + `dist`. pg-mem: `dist` + `pg-mem`. Wasm: `dist` + `@electric-sql/pglite`. All exclude the Node runtime you already have.
 ⁴ Sum of the Docker image sizes the default local stack runs, excluding Docker Desktop itself.

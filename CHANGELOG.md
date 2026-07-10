@@ -34,6 +34,12 @@ Supabase-style bootstrap + **135 production migrations** (rapidnative) apply
   skipped with a warning instead of aborting startup (local dev), and the Admin UI table
   list tolerates a per-table count failure instead of blanking.
 
+### Docs
+- README, website (`/docs`, `/browser`, feature matrix) now describe `pgmem` accurately:
+  it runs PL/pgSQL, triggers and RLS-policy DDL via the `@tinbase/pg-mem` fork (migrations
+  apply unchanged, nothing skipped), rather than the previous "no triggers / no RLS /
+  RLS DDL skipped" subset.
+
 ## [0.7.1] — 2026-07-09
 
 Docs/metadata accuracy pass after 0.7.0.
