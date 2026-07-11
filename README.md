@@ -124,7 +124,7 @@ const server = await serve(backend, { port: 54321 })
 | Cron | `cron.*` | Scheduled jobs, drop-in with pg_cron's API — `cron.schedule(name, '*/5 * * * *', 'sql')` (also the `'N seconds'` form), `cron.unschedule(...)`, and the `cron.job` / `cron.job_run_details` tables. Schedules match in **UTC**, like hosted pg_cron; an in-process scheduler runs due jobs and logs to `cron.job_run_details`. Jobs run while tinbase is up, with service-role privileges. No extension |
 | HTTP from SQL (pg_net) | `net.*` | `net.http_post` / `net.http_get` / `net.http_delete(...)` enqueue a request that an in-process worker sends, recording the reply in `net._http_response`. Lets a cron job or trigger call an Edge Function or any URL — the common Supabase `cron.schedule(..., $$ select net.http_post(...) $$)` pattern works unchanged. No extension |
 | Database Webhooks | config | Fire HTTP requests on table INSERT/UPDATE/DELETE with Supabase's exact payload (`type`/`table`/`schema`/`record`/`old_record`). Configured via `createBackend({ webhooks })`, `backend.webhooks.register()`, or `supabase/webhooks.json`. Built on the CDC pipeline — no extension needed |
-| Studio (Admin UI) | `/_/` | A Supabase-Studio-style dashboard (React + Radix + Tailwind): Table Editor with full row CRUD, SQL editor, user management, bucket/object CRUD, and a database overview. One self-contained HTML file (works in the single binary); log in with the service_role key |
+| Studio (Admin UI) | `/_/` | A Supabase-Studio-style dashboard (React + Radix + Tailwind) with real URL routing and a command palette: table editor (filters, sorting, inline type-aware editing, FK navigation, RLS + role preview), database section (schema visualizer, tables, functions, triggers, enums, indexes, migrations, policies, roles), authentication, storage, edge functions, realtime, automations (cron/queues/webhooks), logs, SQL editor, settings, and a live Advisor. One self-contained HTML file (works in the single binary); log in with the service_role key |
 | Realtime | `/realtime/v1` | Phoenix protocol (v1 JSON and v2 array/binary serializers), `postgres_changes` (INSERT/UPDATE/DELETE, filters) fed by triggers + `pg_notify`, broadcast (incl. binary payloads), presence. WebSocket server is a ~150-line RFC 6455 implementation - no `ws` dependency |
 
 ### RLS works like real Supabase
@@ -139,14 +139,15 @@ create policy "own rows" on todos
 
 ## Studio
 
-tinbase ships with a built-in dashboard at [`/_/`](http://127.0.0.1:54321/_/) - the same shape as Supabase Studio:
+tinbase ships with a built-in dashboard at [`/_/`](http://127.0.0.1:54321/_/) - the same shape as Supabase Studio, with real URL routing (deep links, back/forward), a `Ctrl+K` command palette, light/dark theming, and drag-resizable panels:
 
-- **Table Editor** - browse tables with pagination and row counts; insert, edit, and delete rows (type-aware, primary-key based)
-- **SQL Editor** - run arbitrary SQL with result grids and Postgres error details
-- **Authentication** - list, create, delete users and reset passwords
-- **Storage** - create/delete buckets, upload/delete objects, toggle public access
-- **RLS Policies** - list, create, and drop policies per table
-- **Database** - stats, migrations, functions, and triggers
+- **Table Editor** - browse and edit with filters, column sorting, checkboxes and bulk actions; inline type-aware cell editors (enums and booleans as pickers, timestamps with a NOW helper); foreign-key navigation; RLS controls and "view data as" role preview; a schema selector; and a Data/Definition split.
+- **SQL Editor** - saved queries and tabs, run-as-role, result limits, history, schema-aware autocomplete, and a results grid with CSV/JSON export.
+- **Database** - a schema visualizer plus tables, functions, triggers, enumerated types, indexes, migrations, policies, and roles - each with create/edit flows in side sheets.
+- **Authentication** - a users grid with a detail panel, invite via magic link, and live sign-in/provider settings.
+- **Storage** - bucket rail with Files/Settings/Policies tabs, folder browsing, previews, signed URLs, drag-drop upload, and RLS policy management.
+- **Edge Functions / Realtime / Automations / Logs** - an invoke tester and secrets, a live channel inspector with authorization policies, cron/queues/webhooks, and a faceted log explorer.
+- **Advisor** - runs the applicable Supabase security and performance lints live against the catalog, opened from the header or the dashboard, with per-finding detail and a jump to the fix.
 
 It is a React app compiled to a single self-contained HTML file, so it also works inside the single binary. Sign in with the `service_role` key printed at startup.
 
@@ -213,7 +214,7 @@ Rough coverage of the supabase-js SDK surface, measured against what each sub-li
 
 **Overall: roughly 80% of the supabase-js SDK surface - and ~90% of what a typical CRUD + auth + storage + realtime app actually calls.**
 
-Beyond the client SDK, the local platform features real projects depend on also work: **type generation**, **RLS** (enforced on REST, Storage, and realtime), **database webhooks**, **cron**, **queues (pgmq)**, the **Studio** dashboard, and Supabase-CLI migration conventions (`db reset` / `db diff`). The remaining gaps are OAuth logins' provider variety, the Deno edge-function runtime, and pgvector (needs an extension binary).
+Beyond the client SDK, the local platform features real projects depend on also work: **type generation**, **RLS** (enforced on REST, Storage, and realtime), **database webhooks**, **cron**, **queues (pgmq)**, a **Supabase-Studio-parity dashboard** (table editor, database catalog, auth/storage/edge-functions/realtime/automations management, SQL editor, and a live Advisor), and Supabase-CLI migration conventions (`db reset` / `db diff`). The remaining gaps are OAuth logins' provider variety, phone auth/MFA polish, and pgvector (needs an extension binary).
 
 ## Known gaps
 
