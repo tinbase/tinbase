@@ -4,7 +4,7 @@ All notable changes to tinbase are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and versions follow semver
 (pre-1.0, minor bumps may include breaking changes).
 
-## [Unreleased]
+## [0.9.0] — 2026-07-11
 
 A security hardening pass and a set of GDPR / compliance building blocks. Based
 on the audit and PRs by [@BankkRoll](https://github.com/BankkRoll) (#40, #41,

@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { createBackend, RetentionService, type TinbaseBackend } from '../src/index.js'
 
+// Each test cold-boots a fresh backend; PGlite startup is slow under the
+// full suite's parallel load, so allow generous time (matches migration-compat).
+const T = 30_000
+
 let backend: TinbaseBackend | null = null
 afterEach(async () => {
   if (backend) await backend.close()
@@ -31,7 +35,7 @@ describe('retention sweep', () => {
       `select token from auth.one_time_tokens where email = 'ret@example.com'`
     )
     expect(left.rows.map((r) => r.token)).toEqual(['222222'])
-  })
+  }, T)
 
   it('deletes audit entries older than the retention window', async () => {
     // disable the backend's own auto-sweep so only the explicit service below runs
@@ -51,7 +55,7 @@ describe('retention sweep', () => {
     const actions = rows.rows.map((r) => r.payload.action)
     expect(actions).toContain('recent')
     expect(actions).not.toContain('old')
-  })
+  }, T)
 
   it('keeps everything when a window is 0', async () => {
     // disable the backend's own auto-sweep so only the explicit service below runs
@@ -63,5 +67,5 @@ describe('retention sweep', () => {
     await svc.sweep()
     const rows = await backend.db.query(`select 1 from auth.audit_log_entries where payload->>'action' = 'ancient'`)
     expect(rows.rows.length).toBe(1)
-  })
+  }, T)
 })
