@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { WeightChart } from '@/components/weight-chart'
 import { FeatureIcon } from '@/components/feature-icon'
 import { ArchitectureDiagram } from '@/components/architecture-diagram'
+import { IntroVideo } from '@/components/intro-video'
 import { SiteNav } from '@/components/site-nav'
 import { Badge, Card, LinkButton } from '@/components/ui'
 import { Code } from '@/components/code'
@@ -106,6 +107,18 @@ export default function Home() {
           <code className="mt-8 rounded-lg border border-border bg-surface-2 px-4 py-2.5 font-mono text-sm text-accent">
             npx tinbase start
           </code>
+        </section>
+
+        {/* intro video */}
+        <section className="pb-8">
+          <IntroVideo
+            videoId="cab67bcccefd9a7693331e44f782c181"
+            title="tinbase intro"
+            className="mx-auto max-w-4xl"
+          />
+          <p className="mt-4 text-center text-sm text-subtle">
+            Watch: a Supabase-compatible backend in a single process, in about two minutes.
+          </p>
         </section>
 
         {/* benchmark */}
