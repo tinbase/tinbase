@@ -391,3 +391,34 @@ describe('explain', () => {
     expect((data as unknown as Array<{ Plan: unknown }>)[0]).toHaveProperty('Plan')
   })
 })
+
+describe('spread embeds', () => {
+  it('to-one spread merges the related row columns', async () => {
+    // author 1's name may have been mutated by earlier tests; compare live
+    const { data: author } = await env.supabase.from('authors').select('name').eq('id', 1).single()
+    const { data, error } = await env.supabase
+      .from('posts')
+      .select('title, ...authors(author_name:name)')
+      .eq('id', 1)
+      .single()
+    expect(error).toBeNull()
+    expect(data).toMatchObject({
+      title: 'Analytical Engines',
+      author_name: (author as { name: string }).name,
+    })
+  })
+
+  it('to-many spread aggregates each column into an array', async () => {
+    const { data, error } = await env.supabase
+      .from('authors')
+      .select('name, ...posts(titles:title)')
+      .eq('id', 2)
+      .single()
+    expect(error).toBeNull()
+    const row = data as { name: string; titles: string[] }
+    expect(row.name).toBe('Linus')
+    expect(Array.isArray(row.titles)).toBe(true)
+    expect(row.titles).toContain('Git Internals')
+    expect(row.titles).toContain('Kernel Design')
+  })
+})

@@ -336,10 +336,9 @@ export class QueryBuilder {
     const outName = embed.alias ?? embed.name
 
     if (embed.spread) {
-      if (rel.type !== 'to-one' && rel.type !== 'm2m') {
-        // to-many spread is a newer PostgREST feature; not supported here
-        throw new ParseError(`spread embeds are only supported for to-one relationships: ...${embed.name}`)
-      }
+      // to-one spreads a single row's columns; to-many / m2m aggregate each
+      // spread column into a JSON array (PostgREST's spread-to-many behavior).
+      const toOne = rel.type === 'to-one'
       const exprs = children.map((c) => {
         if (c.kind !== 'column' || c.name === '*') {
           throw new ParseError('spread embeds support explicit columns only')
@@ -347,7 +346,9 @@ export class QueryBuilder {
         const expr = renderColumnExpr(childAlias, c.name)
         const cast = c.cast ? `::${sanitizeCast(c.cast)}` : ''
         const out = c.alias ?? defaultAliasFor(c.name)
-        return `(select ${expr}${cast} from ${fromClause}${where}) as ${quoteIdent(out)}`
+        return toOne
+          ? `(select ${expr}${cast} from ${fromClause}${where}) as ${quoteIdent(out)}`
+          : `coalesce((select json_agg(${expr}${cast}${order}) from ${fromClause}${where}), ${AGG_EMPTY}) as ${quoteIdent(out)}`
       })
       const innerCond = embed.inner ? `exists (select 1 from ${fromClause}${where})` : undefined
       return { exprs, innerCond }
