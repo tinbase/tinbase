@@ -4,6 +4,37 @@ All notable changes to tinbase are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and versions follow semver
 (pre-1.0, minor bumps may include breaking changes).
 
+## [0.10.0] — 2026-07-13
+
+Fidelity edges across PostgREST and Storage, plus the ability to run against a
+Postgres you already have.
+
+### Added
+- **Connect to an external Postgres** — `tinbase start --database-url
+  postgres://user:pass@host:5432/db` (or the `DATABASE_URL` env, or
+  `createBackend({ databaseUrl })`) points REST/Auth/Storage at a Postgres you
+  already run instead of the embedded engine. The wire client gained
+  cleartext/md5/**SCRAM-SHA-256** auth for TCP, and the target is treated as
+  shared/pre-existing (idempotent bootstrap; migrations/seed stay tracked).
+  TLS/sslmode, realtime CDC without superuser, and pooling are follow-ups.
+- **PostgREST aggregates in select** — `count()`, `col.sum()/avg()/max()/min()`
+  (with alias/cast), and any non-aggregate column becomes an implicit `GROUP BY`
+  key, e.g. `select=author_id,views.sum()`.
+- **`.explain()`** — `Accept: application/vnd.pgrst.plan+{text,json}` returns the
+  query plan (analyze/verbose/settings/buffers/wal options honored).
+- **`.csv()`** — `Accept: text/csv` serializes results to CSV.
+- **Spread embeds** — to-many and m2m spreads (`...rel(col)`) now aggregate each
+  column into a JSON array (to-one keeps its scalar-merge behavior).
+- **Storage resumable (TUS) uploads** — a minimal TUS 1.0.0 server at
+  `/storage/v1/upload/resumable` (creation, creation-with-upload, PATCH by
+  offset, HEAD, termination) for supabase-js's resumable upload flow.
+
+### Changed
+- **Image transformations are served as a no-op** (with a one-time warning)
+  instead of 404ing: transform requests (`/render/image/…`) return the original
+  object so apps still get their image. Real resize/re-encode needs a bundled
+  image codec (still a follow-up).
+
 ## [0.9.0] — 2026-07-11
 
 A security hardening pass and a set of GDPR / compliance building blocks. Based
