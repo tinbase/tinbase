@@ -179,3 +179,89 @@ describe('storage', () => {
     await env.supabase.auth.signInWithPassword({ email: 'files@example.com', password: 'password123' })
   })
 })
+
+describe('resumable (TUS) uploads', () => {
+  const BASE = 'http://localhost:54321/storage/v1/upload/resumable'
+  const svc = () => ({ apikey: env.backend.serviceRoleKey, authorization: `Bearer ${env.backend.serviceRoleKey}` })
+  const meta = (o: Record<string, string>) =>
+    Object.entries(o)
+      .map(([k, v]) => `${k} ${Buffer.from(v).toString('base64')}`)
+      .join(',')
+
+  it('creates an upload, resumes across chunks, and finalizes the object', async () => {
+    const body = new TextEncoder().encode('resumable upload works across chunks')
+    const half = Math.floor(body.length / 2)
+
+    // create
+    const create = await env.backend.fetch(
+      new Request(BASE, {
+        method: 'POST',
+        headers: {
+          ...svc(),
+          'tus-resumable': '1.0.0',
+          'upload-length': String(body.length),
+          'upload-metadata': meta({ bucketName: 'avatars', objectName: 'tus/file.txt', contentType: 'text/plain' }),
+        },
+      })
+    )
+    expect(create.status).toBe(201)
+    const location = create.headers.get('location')!
+    expect(location).toContain('/upload/resumable/')
+    expect(create.headers.get('tus-resumable')).toBe('1.0.0')
+
+    // first chunk
+    const p1 = await env.backend.fetch(
+      new Request(location, {
+        method: 'PATCH',
+        headers: { ...svc(), 'tus-resumable': '1.0.0', 'content-type': 'application/offset+octet-stream', 'upload-offset': '0' },
+        body: body.slice(0, half),
+      })
+    )
+    expect(p1.status).toBe(204)
+    expect(p1.headers.get('upload-offset')).toBe(String(half))
+
+    // HEAD reports the resumable offset
+    const head = await env.backend.fetch(new Request(location, { method: 'HEAD', headers: { ...svc(), 'tus-resumable': '1.0.0' } }))
+    expect(head.headers.get('upload-offset')).toBe(String(half))
+    expect(head.headers.get('upload-length')).toBe(String(body.length))
+
+    // remaining chunk finalizes
+    const p2 = await env.backend.fetch(
+      new Request(location, {
+        method: 'PATCH',
+        headers: { ...svc(), 'tus-resumable': '1.0.0', 'content-type': 'application/offset+octet-stream', 'upload-offset': String(half) },
+        body: body.slice(half),
+      })
+    )
+    expect(p2.status).toBe(204)
+    expect(p2.headers.get('upload-offset')).toBe(String(body.length))
+
+    // the object is now downloadable with the full contents
+    const dl = await env.admin.storage.from('avatars').download('tus/file.txt')
+    expect(dl.error).toBeNull()
+    expect(await dl.data!.text()).toBe('resumable upload works across chunks')
+  })
+
+  it('rejects a PATCH whose Upload-Offset does not match', async () => {
+    const create = await env.backend.fetch(
+      new Request(BASE, {
+        method: 'POST',
+        headers: {
+          ...svc(),
+          'tus-resumable': '1.0.0',
+          'upload-length': '10',
+          'upload-metadata': meta({ bucketName: 'avatars', objectName: 'tus/mismatch.txt' }),
+        },
+      })
+    )
+    const location = create.headers.get('location')!
+    const bad = await env.backend.fetch(
+      new Request(location, {
+        method: 'PATCH',
+        headers: { ...svc(), 'tus-resumable': '1.0.0', 'content-type': 'application/offset+octet-stream', 'upload-offset': '5' },
+        body: new Uint8Array(3),
+      })
+    )
+    expect(bad.status).toBe(409)
+  })
+})

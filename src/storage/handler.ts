@@ -60,7 +60,24 @@ function isRenderableActiveType(contentType: string): boolean {
   )
 }
 
+/** In-flight resumable (TUS) upload, held in memory until the last chunk. */
+interface TusUpload {
+  bucketId: string
+  key: string
+  contentType: string
+  cacheControl: string
+  upsert: boolean
+  length: number
+  offset: number
+  data: Uint8Array
+  ctx: RequestContext
+}
+
+const TUS_VERSION = '1.0.0'
+
 export class StorageHandler {
+  private tusUploads = new Map<string, TusUpload>()
+
   constructor(
     private db: Database,
     private driver: StorageDriver,
@@ -84,6 +101,12 @@ export class StorageHandler {
 
       // ── objects ──
       const parts = rest.split('/').map(dec)
+
+      // ── resumable (TUS) uploads: /upload/resumable[/:id] ──
+      if (parts[0] === 'upload' && parts[1] === 'resumable') {
+        return await this.handleTus(req, ctx, url, parts.slice(2).join('/'), method)
+      }
+
       if (parts[0] !== 'object') return storageError(404, 'not_found', `unknown storage endpoint: ${rest}`)
 
       if (parts[1] === 'move' && method === 'POST') return await this.moveOrCopy(req, ctx, 'move')
@@ -267,6 +290,28 @@ export class StorageHandler {
       }
     }
 
+    try {
+      const id = await this.persistObject(ctx, bucketId, key, bytes, contentType, cacheControl, upsert)
+      return json(200, { Key: `${bucketId}/${key}`, Id: id })
+    } catch (e) {
+      const pg = e as { code?: string }
+      if (pg.code === '23505') {
+        return storageError(409, 'Duplicate', 'The resource already exists')
+      }
+      throw e
+    }
+  }
+
+  /** Insert (or upsert) the object row and write its bytes to the driver. */
+  private async persistObject(
+    ctx: RequestContext,
+    bucketId: string,
+    key: string,
+    bytes: Uint8Array,
+    contentType: string,
+    cacheControl: string,
+    upsert: boolean
+  ): Promise<string> {
     const metadata = {
       eTag: `"${crypto.randomUUID()}"`,
       size: bytes.length,
@@ -276,29 +321,163 @@ export class StorageHandler {
       contentLength: bytes.length,
       httpStatusCode: 200,
     }
-
     const conflictClause = upsert
       ? `on conflict (bucket_id, name) do update
            set metadata = excluded.metadata, owner = excluded.owner, updated_at = now(), version = excluded.version`
       : ''
-    try {
-      const res = await this.db.withContext(ctx, (q) =>
-        q(
-          `insert into storage.objects (bucket_id, name, owner, metadata, version)
-           values ($1, $2, $3, $4::jsonb, $5) ${conflictClause} returning id`,
-          [bucketId, key, ctx.claims?.sub ?? null, JSON.stringify(metadata), crypto.randomUUID()]
-        )
+    const res = await this.db.withContext(ctx, (q) =>
+      q(
+        `insert into storage.objects (bucket_id, name, owner, metadata, version)
+         values ($1, $2, $3, $4::jsonb, $5) ${conflictClause} returning id`,
+        [bucketId, key, ctx.claims?.sub ?? null, JSON.stringify(metadata), crypto.randomUUID()]
       )
-      await this.driver.put(`${bucketId}/${key}`, bytes)
-      const id = (res.rows[0] as { id: string }).id
-      return json(200, { Key: `${bucketId}/${key}`, Id: id })
-    } catch (e) {
-      const pg = e as { code?: string }
-      if (pg.code === '23505') {
-        return storageError(409, 'Duplicate', 'The resource already exists')
+    )
+    await this.driver.put(`${bucketId}/${key}`, bytes)
+    return (res.rows[0] as { id: string }).id
+  }
+
+  // ── resumable (TUS) uploads ───────────────────────────────────────────────
+  // A minimal TUS 1.0.0 server (creation, creation-with-upload, core PATCH,
+  // termination) for supabase-js's resumable uploads. Upload state is held in
+  // memory, so it resumes across network interruptions within a server session.
+
+  private async handleTus(
+    req: Request,
+    ctx: RequestContext,
+    url: URL,
+    id: string,
+    method: string
+  ): Promise<Response> {
+    const tus = (extra: Record<string, string> = {}): Record<string, string> => ({
+      'tus-resumable': TUS_VERSION,
+      ...extra,
+    })
+
+    if (method === 'OPTIONS') {
+      return new Response(null, {
+        status: 204,
+        headers: tus({ 'tus-version': TUS_VERSION, 'tus-extension': 'creation,creation-with-upload,termination' }),
+      })
+    }
+
+    // POST /upload/resumable — create a new upload
+    if (id === '' && method === 'POST') {
+      const length = parseInt(req.headers.get('upload-length') ?? '', 10)
+      if (!Number.isFinite(length) || length < 0) {
+        return storageError(400, 'invalid_request', 'a non-negative Upload-Length header is required')
       }
+      const meta = parseTusMetadata(req.headers.get('upload-metadata'))
+      const bucketId = meta.bucketName
+      const key = meta.objectName
+      if (!bucketId || !key) {
+        return storageError(400, 'invalid_request', 'bucketName and objectName upload metadata are required')
+      }
+      const bucket = await this.loadBucket(bucketId)
+      if (!bucket) return storageError(404, 'Bucket not found', 'Bucket not found')
+      if (bucket.file_size_limit != null && length > Number(bucket.file_size_limit)) {
+        return storageError(413, 'Payload too large', 'The object exceeded the maximum allowed size')
+      }
+      const uploadId = crypto.randomUUID()
+      const upload: TusUpload = {
+        bucketId,
+        key,
+        contentType: meta.contentType ?? 'application/octet-stream',
+        cacheControl: meta.cacheControl ?? 'no-cache',
+        upsert: (req.headers.get('x-upsert') ?? 'false').toLowerCase() === 'true',
+        length,
+        offset: 0,
+        data: new Uint8Array(length),
+        ctx,
+      }
+      this.tusUploads.set(uploadId, upload)
+
+      // creation-with-upload: an initial chunk may ride along on the POST
+      if ((req.headers.get('content-type') ?? '').includes('application/offset+octet-stream')) {
+        const chunk = new Uint8Array(await req.arrayBuffer())
+        if (chunk.length > 0) {
+          const err = await this.appendTus(uploadId, upload, 0, chunk)
+          if (err) return err
+        }
+      }
+      return new Response(null, {
+        status: 201,
+        headers: tus({
+          location: `${url.origin}/storage/v1/upload/resumable/${uploadId}`,
+          'upload-offset': String(upload.offset),
+        }),
+      })
+    }
+
+    const upload = id ? this.tusUploads.get(id) : undefined
+
+    if (method === 'HEAD') {
+      if (!upload) return new Response(null, { status: 404, headers: tus() })
+      return new Response(null, {
+        status: 200,
+        headers: tus({
+          'upload-offset': String(upload.offset),
+          'upload-length': String(upload.length),
+          'cache-control': 'no-store',
+        }),
+      })
+    }
+
+    if (method === 'PATCH') {
+      if (!upload) return new Response(null, { status: 404, headers: tus() })
+      if (!(req.headers.get('content-type') ?? '').includes('application/offset+octet-stream')) {
+        return new Response(null, { status: 415, headers: tus() })
+      }
+      const offset = parseInt(req.headers.get('upload-offset') ?? '', 10)
+      if (offset !== upload.offset) {
+        return new Response(null, { status: 409, headers: tus() }) // offset mismatch
+      }
+      const chunk = new Uint8Array(await req.arrayBuffer())
+      const err = await this.appendTus(id, upload, offset, chunk)
+      if (err) return err
+      return new Response(null, { status: 204, headers: tus({ 'upload-offset': String(upload.offset) }) })
+    }
+
+    if (method === 'DELETE') {
+      this.tusUploads.delete(id)
+      return new Response(null, { status: 204, headers: tus() })
+    }
+
+    return storageError(404, 'not_found', 'unknown resumable upload endpoint')
+  }
+
+  /** Append a chunk at `offset`; finalize the object once fully received. */
+  private async appendTus(
+    id: string,
+    upload: TusUpload,
+    offset: number,
+    chunk: Uint8Array
+  ): Promise<Response | undefined> {
+    if (offset + chunk.length > upload.length) {
+      this.tusUploads.delete(id)
+      return storageError(400, 'invalid_request', 'chunk exceeds the declared Upload-Length')
+    }
+    upload.data.set(chunk, offset)
+    upload.offset = offset + chunk.length
+    if (upload.offset < upload.length) return undefined
+
+    try {
+      await this.persistObject(
+        upload.ctx,
+        upload.bucketId,
+        upload.key,
+        upload.data,
+        upload.contentType,
+        upload.cacheControl,
+        upload.upsert
+      )
+    } catch (e) {
+      this.tusUploads.delete(id)
+      const pg = e as { code?: string }
+      if (pg.code === '23505') return storageError(409, 'Duplicate', 'The resource already exists')
       throw e
     }
+    this.tusUploads.delete(id)
+    return undefined
   }
 
   private async download(ctx: RequestContext, bucketId: string, key: string, head: boolean): Promise<Response> {
@@ -664,4 +843,19 @@ function encPath(key: string): string {
 
 function dec(s: string): string {
   return decodeURIComponent(s)
+}
+
+/** Parse a TUS `Upload-Metadata` header (`key <base64>,flag,...`) to a map. */
+function parseTusMetadata(header: string | null): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (!header) return out
+  for (const pair of header.split(',')) {
+    const trimmed = pair.trim()
+    if (trimmed === '') continue
+    const sp = trimmed.indexOf(' ')
+    const k = sp === -1 ? trimmed : trimmed.slice(0, sp)
+    const v = sp === -1 ? '' : trimmed.slice(sp + 1)
+    out[k] = v === '' ? '' : new TextDecoder().decode(Uint8Array.from(atob(v), (c) => c.charCodeAt(0)))
+  }
+  return out
 }
