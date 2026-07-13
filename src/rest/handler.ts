@@ -25,6 +25,31 @@ function parsePrefer(header: string | null): Prefer {
 }
 
 const OBJECT_MEDIA = 'application/vnd.pgrst.object+json'
+const CSV_MEDIA = 'text/csv'
+
+/** Serialize an array of row objects to CSV (RFC 4180), matching `.csv()`. */
+function rowsToCsv(rows: unknown[]): string {
+  const objs = rows as Record<string, unknown>[]
+  // header = union of keys in first-appearance order
+  const cols: string[] = []
+  const seen = new Set<string>()
+  for (const row of objs) {
+    for (const k of Object.keys(row ?? {})) {
+      if (!seen.has(k)) {
+        seen.add(k)
+        cols.push(k)
+      }
+    }
+  }
+  const cell = (v: unknown): string => {
+    if (v === null || v === undefined) return ''
+    const s = typeof v === 'object' ? JSON.stringify(v) : String(v)
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const lines = [cols.join(',')]
+  for (const row of objs) lines.push(cols.map((c) => cell((row ?? {})[c])).join(','))
+  return lines.join('\n')
+}
 
 export class RestHandler {
   constructor(private db: Database) {}
@@ -60,7 +85,9 @@ export class RestHandler {
   ): Promise<Response> {
     const method = req.method.toUpperCase()
     const prefer = parsePrefer(req.headers.get('prefer'))
-    const wantsObject = (req.headers.get('accept') ?? '').includes(OBJECT_MEDIA)
+    const accept = req.headers.get('accept') ?? ''
+    const wantsObject = accept.includes(OBJECT_MEDIA)
+    const wantsCsv = accept.includes(CSV_MEDIA)
     const q = parseQuery(url.searchParams)
     const info = await this.db.getSchemaInfo(schema)
     const builder = new QueryBuilder(schema, info, q, { aliasMutations: !this.db.engine.minimalBootstrap })
@@ -83,6 +110,7 @@ export class RestHandler {
           count,
           offset: q.offsets.get('') ?? 0,
           wantsObject,
+          wantsCsv,
           head: method === 'HEAD',
         })
       }
@@ -101,7 +129,7 @@ export class RestHandler {
           missingDefault: prefer.missing === 'default',
           returning: queryReturning,
         })
-        return this.runMutation(ctx, built, { status: 201, returning, queryReturning, wantsObject, prefer, cdc })
+        return this.runMutation(ctx, built, { status: 201, returning, queryReturning, wantsObject, wantsCsv, prefer, cdc })
       }
 
       case 'PATCH': {
@@ -118,7 +146,7 @@ export class RestHandler {
         const cdc = this.db.jsCdc ? { schema, table, type: 'UPDATE' as const } : null
         const queryReturning = returning || !!cdc
         const built = builder.buildUpdate(table, body as Record<string, unknown>, { returning: queryReturning })
-        return this.runMutation(ctx, built, { status: 200, returning, queryReturning, wantsObject, prefer, cdc })
+        return this.runMutation(ctx, built, { status: 200, returning, queryReturning, wantsObject, wantsCsv, prefer, cdc })
       }
 
       case 'DELETE': {
@@ -126,7 +154,7 @@ export class RestHandler {
         const cdc = this.db.jsCdc ? { schema, table, type: 'DELETE' as const } : null
         const queryReturning = returning || !!cdc
         const built = builder.buildDelete(table, { returning: queryReturning })
-        return this.runMutation(ctx, built, { status: 200, returning, queryReturning, wantsObject, prefer, cdc })
+        return this.runMutation(ctx, built, { status: 200, returning, queryReturning, wantsObject, wantsCsv, prefer, cdc })
       }
 
       default:
@@ -142,6 +170,7 @@ export class RestHandler {
       returning: boolean
       queryReturning: boolean
       wantsObject: boolean
+      wantsCsv: boolean
       prefer: Prefer
       cdc: { schema: string; table: string; type: 'INSERT' | 'UPDATE' | 'DELETE' } | null
     }
@@ -172,19 +201,32 @@ export class RestHandler {
       count: opts.prefer.count !== undefined ? rows!.length : null,
       offset: 0,
       wantsObject: opts.wantsObject,
+      wantsCsv: opts.wantsCsv,
       head: false,
     })
   }
 
   private dataResponse(
     rows: unknown[],
-    opts: { status: number; count: number | null; offset: number; wantsObject: boolean; head: boolean }
+    opts: {
+      status: number
+      count: number | null
+      offset: number
+      wantsObject: boolean
+      wantsCsv?: boolean
+      head: boolean
+    }
   ): Response {
     const total = opts.count !== null ? String(opts.count) : '*'
     const rangePart =
       rows.length > 0 ? `${opts.offset}-${opts.offset + rows.length - 1}` : '*'
     const headers: Record<string, string> = {
       'content-range': `${rangePart}/${total}`,
+    }
+
+    if (opts.wantsCsv) {
+      headers['content-type'] = `${CSV_MEDIA}; charset=utf-8`
+      return new Response(opts.head ? null : rowsToCsv(rows), { status: opts.status, headers })
     }
 
     if (opts.wantsObject) {
@@ -220,7 +262,9 @@ export class RestHandler {
       return jsonResponse(405, { code: 'PGRST105', message: `Method ${method} not allowed`, details: null, hint: null })
     }
     const prefer = parsePrefer(req.headers.get('prefer'))
-    const wantsObject = (req.headers.get('accept') ?? '').includes(OBJECT_MEDIA)
+    const rpcAccept = req.headers.get('accept') ?? ''
+    const wantsObject = rpcAccept.includes(OBJECT_MEDIA)
+    const wantsCsv = rpcAccept.includes(CSV_MEDIA)
 
     const fns = await this.db.getFunctions(schema, fnName)
     if (fns.length === 0) {
@@ -332,6 +376,7 @@ export class RestHandler {
       count,
       offset: q.offsets.get('') ?? 0,
       wantsObject,
+      wantsCsv,
       head: method === 'HEAD',
     })
   }

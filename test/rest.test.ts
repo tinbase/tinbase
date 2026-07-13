@@ -292,3 +292,37 @@ describe('row level security', () => {
     await env.supabase.auth.signOut()
   })
 })
+
+describe('csv output', () => {
+  it('returns selected rows as CSV with a header row', async () => {
+    const { data, error } = await env.supabase
+      .from('posts')
+      .select('title,views')
+      .order('id')
+      .csv()
+    expect(error).toBeNull()
+    expect(typeof data).toBe('string')
+    const lines = (data as string).trim().split('\n')
+    expect(lines[0]).toBe('title,views')
+    // shared env accumulates inserts from earlier tests: header + the 4 seeded rows at least
+    expect(lines.length).toBeGreaterThanOrEqual(5)
+    expect(lines[1]).toBe('Analytical Engines,100') // seeded post id=1, ordered first
+  })
+
+  it('quotes cells containing commas or quotes', async () => {
+    const { data: id } = await env.admin
+      .from('posts')
+      .insert({ title: 'Commas, "quotes" and more', author_id: 1 })
+      .select('id')
+      .single()
+    const { data, error } = await env.admin
+      .from('posts')
+      .select('title')
+      .eq('id', (id as { id: number }).id)
+      .csv()
+    expect(error).toBeNull()
+    // comma + embedded quotes → wrapped in quotes with quotes doubled
+    expect((data as string).trim().split('\n')[1]).toBe('"Commas, ""quotes"" and more"')
+    await env.admin.from('posts').delete().eq('id', (id as { id: number }).id)
+  })
+})
