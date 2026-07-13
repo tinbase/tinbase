@@ -26,6 +26,19 @@ function parsePrefer(header: string | null): Prefer {
 
 const OBJECT_MEDIA = 'application/vnd.pgrst.object+json'
 const CSV_MEDIA = 'text/csv'
+const PLAN_MEDIA = 'application/vnd.pgrst.plan'
+
+/** Parse an `.explain()` Accept header into an EXPLAIN format + option list. */
+function parseExplain(accept: string): { format: 'JSON' | 'TEXT'; options: string[] } | null {
+  if (!accept.includes(PLAN_MEDIA)) return null
+  const format = accept.includes(`${PLAN_MEDIA}+json`) ? 'JSON' : 'TEXT'
+  const allowed = new Set(['analyze', 'verbose', 'settings', 'buffers', 'wal'])
+  const m = accept.match(/options=([^;]+)/)
+  const options = m
+    ? m[1].split('|').map((s) => s.trim().toLowerCase()).filter((o) => allowed.has(o))
+    : []
+  return { format, options }
+}
 
 /** Serialize an array of row objects to CSV (RFC 4180), matching `.csv()`. */
 function rowsToCsv(rows: unknown[]): string {
@@ -95,6 +108,30 @@ export class RestHandler {
     switch (method) {
       case 'GET':
       case 'HEAD': {
+        const explain = parseExplain(accept)
+        if (explain) {
+          const plan = builder.buildSelect(table, { count: false })
+          const explainOpts = [
+            ...explain.options.map((o) => o.toUpperCase()),
+            `FORMAT ${explain.format}`,
+          ].join(', ')
+          const res = await this.db.withContext(ctx, (query) =>
+            query(`explain (${explainOpts}) ${plan.sql}`, plan.params)
+          )
+          const cell = (res.rows[0] as Record<string, unknown>)['QUERY PLAN']
+          if (explain.format === 'JSON') {
+            const body = typeof cell === 'string' ? cell : JSON.stringify(cell)
+            return new Response(body, {
+              status: 200,
+              headers: { 'content-type': 'application/json; charset=utf-8' },
+            })
+          }
+          const text = res.rows.map((r) => (r as Record<string, unknown>)['QUERY PLAN']).join('\n')
+          return new Response(text, {
+            status: 200,
+            headers: { 'content-type': `${PLAN_MEDIA}+text; charset=utf-8` },
+          })
+        }
         const built = builder.buildSelect(table, { count: prefer.count !== undefined })
         const { rows, count } = await this.db.withContext(ctx, async (query) => {
           const res = await query(built.sql, built.params)

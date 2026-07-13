@@ -326,3 +326,23 @@ describe('csv output', () => {
     await env.admin.from('posts').delete().eq('id', (id as { id: number }).id)
   })
 })
+
+describe('explain', () => {
+  it('returns a text plan by default', async () => {
+    const { data, error } = await env.supabase.from('posts').select().explain()
+    expect(error).toBeNull()
+    expect(typeof data).toBe('string')
+    expect(data as unknown as string).toMatch(/cost=/)
+  })
+
+  it('returns a JSON plan with { format: "json" }', async () => {
+    const { data, error } = await env.supabase
+      .from('posts')
+      .select()
+      .eq('published', true)
+      .explain({ format: 'json' })
+    expect(error).toBeNull()
+    expect(Array.isArray(data)).toBe(true)
+    expect((data as unknown as Array<{ Plan: unknown }>)[0]).toHaveProperty('Plan')
+  })
+})
