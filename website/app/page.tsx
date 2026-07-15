@@ -85,6 +85,29 @@ supabase.channel('feed')
       handleNewTodo)
   .subscribe()`
 
+// Family-site logos load from their own domains so they stay in sync when those
+// sites update. RapidNative has no published logo URL, so it stays vendored.
+const RELATED = [
+  {
+    name: 'Lifo',
+    href: 'https://lifo.sh',
+    logo: 'https://lifo.sh/brand/lifo-logo.svg',
+    desc: 'Linux APIs in the browser — run real dev tooling with no VM, no container.',
+  },
+  {
+    name: 'jetplane',
+    href: 'https://jetplane.vercel.app',
+    logo: 'https://jetplane.vercel.app/logo.svg',
+    desc: 'A Metro plugin and a lightweight dev server for Expo & React Native — many dev environments per machine.',
+  },
+  {
+    name: 'RapidNative',
+    href: 'https://rapidnative.com',
+    logo: '/logos/rapidnative.svg',
+    desc: 'AI that generates production-ready React Native apps and UIs from a prompt.',
+  },
+]
+
 export default function Home() {
   return (
     <>
@@ -266,26 +289,54 @@ export default function Home() {
         </section>
       </main>
 
-      <footer className="border-t border-border py-10">
-        <div className="mx-auto max-w-6xl space-y-6 px-6">
-          <div className="flex flex-wrap items-center gap-x-8 gap-y-2 text-sm text-subtle">
-            <span className="text-xs font-semibold uppercase tracking-wider text-subtle">
-              Related projects
-            </span>
-            <a href="https://lifo.sh" className="hover:text-fg">
-              <span className="font-medium text-fg">Lifo</span> — Linux APIs in the browser
-            </a>
-            <a href="https://jetplane.vercel.app" className="hover:text-fg">
-              <span className="font-medium text-fg">jetplane</span> — low-footprint Expo dev servers
-            </a>
-            <span className="text-xs font-semibold uppercase tracking-wider text-subtle">
-              Used by
-            </span>
-            <a href="https://rapidnative.com" className="hover:text-fg">
-              <span className="font-medium text-fg">RapidNative</span> — Expo apps, full-stack in the browser
-            </a>
+      <footer className="border-t border-border">
+        {/* From the same team — related projects */}
+        <div className="border-b border-border px-6 py-10">
+          <div className="mx-auto max-w-6xl">
+            <p className="text-xs font-semibold uppercase tracking-wider text-accent">
+              From the same team
+            </p>
+            <h2 className="mt-2 text-lg font-bold tracking-tight text-fg">Related projects</h2>
+            <p className="mt-1 max-w-2xl text-sm text-subtle">
+              tinbase is built by the makers of these open-source tools and products.
+            </p>
+            <div className="mt-6 grid gap-3 sm:grid-cols-3">
+              {RELATED.map((p) => (
+                <a
+                  key={p.name}
+                  href={p.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group flex items-start gap-4 rounded-xl border border-border bg-surface-2 p-4 transition-colors hover:border-accent/40"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={p.logo} alt={`${p.name} logo`} width={40} height={40} className="size-10 shrink-0" />
+                  <div className="min-w-0">
+                    <span className="inline-flex items-center gap-1 font-semibold text-fg group-hover:text-accent">
+                      {p.name}
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="size-3.5 text-subtle group-hover:text-accent"
+                        aria-hidden="true"
+                      >
+                        <path d="M7 17 17 7M7 7h10v10" />
+                      </svg>
+                    </span>
+                    <p className="mt-0.5 text-sm leading-relaxed text-subtle">{p.desc}</p>
+                  </div>
+                </a>
+              ))}
+            </div>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-subtle">
+        </div>
+
+        {/* Base footer */}
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-8 text-sm text-subtle">
           <span>
             Built by{' '}
             <a href="https://x.com/sanketsahu" className="font-medium text-fg hover:text-fg">
@@ -310,7 +361,6 @@ export default function Home() {
             >
               <GitHubIcon />
             </a>
-          </div>
           </div>
         </div>
       </footer>
