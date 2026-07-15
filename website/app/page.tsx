@@ -275,6 +275,9 @@ export default function Home() {
             <a href="https://lifo.sh" className="hover:text-fg">
               <span className="font-medium text-fg">Lifo</span> — Linux APIs in the browser
             </a>
+            <a href="https://jetplane.vercel.app" className="hover:text-fg">
+              <span className="font-medium text-fg">jetplane</span> — low-footprint Expo dev servers
+            </a>
             <span className="text-xs font-semibold uppercase tracking-wider text-subtle">
               Used by
             </span>
