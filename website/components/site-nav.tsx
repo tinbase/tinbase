@@ -40,7 +40,10 @@ export function SiteNav() {
           <Link href="/browser" className="rounded-md px-2 py-1.5 text-fg hover:bg-surface-2 hover:text-fg sm:px-3">
             Browser
           </Link>
-          <a href="/#benchmarks" className="hidden rounded-md px-3 py-1.5 text-fg hover:bg-surface-2 hover:text-fg sm:block">
+          <Link href="/compare" className="hidden rounded-md px-3 py-1.5 text-fg hover:bg-surface-2 hover:text-fg sm:block">
+            Compare
+          </Link>
+          <a href="/#benchmarks" className="hidden rounded-md px-3 py-1.5 text-fg hover:bg-surface-2 hover:text-fg md:block">
             Benchmarks
           </a>
           <a
