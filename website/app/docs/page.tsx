@@ -10,6 +10,7 @@ const SECTIONS = [
   { id: 'why', label: 'Why tinbase' },
   { id: 'architecture', label: 'Architecture' },
   { id: 'getting-started', label: 'Getting started' },
+  { id: 'env', label: 'Environment variables' },
   { id: 'cli', label: 'CLI reference' },
   { id: 'engines', label: 'Engines' },
   { id: 'single-binary', label: 'Single binary' },
@@ -122,6 +123,46 @@ export default function Docs() {
           </P>
           <Pre lang="ts">{`import { createClient } from '@supabase/supabase-js'
 const supabase = createClient('http://127.0.0.1:54321', ANON_KEY)`}</Pre>
+
+          <H2 id="env">Environment variables</H2>
+          <P>
+            None of these are required — <code className={IC}>npx tinbase start</code> boots with zero
+            config. Set them in your shell (or a process manager / hosting platform&apos;s env config)
+            to change a default, or pass the equivalent CLI flag instead.
+          </P>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-fg">
+                  <th className="py-2 pr-4 font-semibold">Variable</th>
+                  <th className="py-2 pr-4 font-semibold">Default</th>
+                  <th className="py-2 pr-4 font-semibold">Flag override</th>
+                  <th className="py-2 font-semibold">Notes</th>
+                </tr>
+              </thead>
+              <tbody className="text-muted">
+                {[
+                  ['TINBASE_PORT / PORT', '54321', '-p, --port <n>', 'Hosting platforms (Heroku, Render, …) inject PORT; TINBASE_PORT wins if both are set.'],
+                  ['TINBASE_JWT_SECRET', 'insecure built-in dev secret', '--jwt-secret <s>', 'Signs the anon/service_role keys. The default ships in tinbase’s source — set a real secret for anything beyond local dev.'],
+                  ['TINBASE_ENGINE', 'native (macOS/Linux, x64/arm64), wasm elsewhere', '--engine <wasm|native|pgmem>', 'Selects the DbEngine backend.'],
+                  ['TINBASE_DATABASE_URL / DATABASE_URL', 'unset (uses the embedded engine)', '--database-url <url>', 'Point at an external Postgres you already run instead of the embedded engine. Treated as shared: bootstrap runs idempotently.'],
+                  ['TINBASE_OAUTH_<PROVIDER>_CLIENT_ID / _CLIENT_SECRET / _ENABLED', 'unset (no OAuth providers)', 'none — also settable via supabase/config.toml [auth.external.<provider>]', 'Only needed to enable OAuth sign-in for that provider. GOTRUE_EXTERNAL_<PROVIDER>_CLIENT_ID / _SECRET / _ENABLED is the GoTrue-compatible alias, checked first.'],
+                ].map(([v, d, f, n]) => (
+                  <tr key={v} className="border-b border-border">
+                    <td className="py-2 pr-4 font-mono text-[0.85em] text-fg">{v}</td>
+                    <td className="py-2 pr-4">{d}</td>
+                    <td className="py-2 pr-4 font-mono text-[0.85em]">{f}</td>
+                    <td className="py-2">{n}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <P className="text-xs text-subtle">
+            <code className={IC}>--host</code>, <code className={IC}>--dir</code>,{' '}
+            <code className={IC}>--data-dir</code>, and <code className={IC}>--storage-dir</code> are
+            flag-only — there&apos;s no env var equivalent for those.
+          </P>
 
           <H2 id="cli">CLI reference</H2>
           <Pre>{`tinbase start      # boot the server (applies pending migrations first)
