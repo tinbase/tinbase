@@ -128,6 +128,36 @@ describe('migration compatibility', () => {
   )
 
   it(
+    'a broken seed.sql does not brick startup, and a corrected seed applies later',
+    async () => {
+      const migrations = [
+        {
+          name: '20240101000010_seed_schema',
+          sql: `create table seed_users (id uuid primary key);
+                create table seed_watchlists (id int primary key, user_id uuid references seed_users (id));`,
+        },
+      ]
+      // Seed violates the FK — startup must survive with the schema intact.
+      backend = await createBackend({
+        migrations,
+        seedSql: `insert into seed_watchlists (id, user_id) values (1, '00000000-0000-0000-0000-000000000001');`,
+      })
+      const empty = await backend.db.query(`select * from seed_watchlists`)
+      expect(empty.rows.length).toBe(0)
+      // The failed seed's hash must not be recorded: a corrected seed applies.
+      const applied = await backend.db.runMigrations(
+        migrations,
+        `insert into seed_users (id) values ('00000000-0000-0000-0000-000000000001');
+         insert into seed_watchlists (id, user_id) values (1, '00000000-0000-0000-0000-000000000001');`
+      )
+      expect(applied).toContain('seed.sql')
+      const rows = await backend.db.query(`select * from seed_watchlists`)
+      expect(rows.rows.length).toBe(1)
+    },
+    T
+  )
+
+  it(
     'auth.users accepts a full GoTrue row (instance_id, email_change*, reauthentication*)',
     async () => {
       backend = await createBackend({})

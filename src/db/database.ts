@@ -225,16 +225,27 @@ export class Database {
         [hash]
       )
       if (seen.rows.length === 0) {
-        await this.engine.transaction(async (tx) => {
-          await tx.exec(DEFAULT_SEARCH_PATH_SQL)
-          await tx.exec(rewriteMigrationSql(seedSql))
-          await tx.query(
-            `insert into supabase_migrations.seed_files (path, hash) values ('supabase/seed.sql', $1)
-             on conflict (path) do update set hash = excluded.hash, applied_at = now()`,
-            [hash]
+        try {
+          await this.engine.transaction(async (tx) => {
+            await tx.exec(DEFAULT_SEARCH_PATH_SQL)
+            await tx.exec(rewriteMigrationSql(seedSql))
+            await tx.query(
+              `insert into supabase_migrations.seed_files (path, hash) values ('supabase/seed.sql', $1)
+               on conflict (path) do update set hash = excluded.hash, applied_at = now()`,
+              [hash]
+            )
+          })
+          applied.push('seed.sql')
+        } catch (e) {
+          // A broken seed (e.g. a sample row violating an FK) must not brick
+          // the database: the schema is already up, so boot with empty tables
+          // instead of failing startup. The transaction rolled back, so nothing
+          // partial persists — and the hash was not recorded, so a corrected
+          // seed still applies on the next boot or migrate.
+          console.warn(
+            `  seed.sql failed - continuing without seed data: ${(e as Error)?.message?.split('\n')[0] ?? e}`
           )
-        })
-        applied.push('seed.sql')
+        }
       }
     }
     if (applied.length > 0) {
