@@ -134,6 +134,7 @@ wal_level = minimal
 max_wal_senders = 0
 synchronous_commit = off
 logging_collector = off
+timezone = 'UTC'
 `
 
 /**
