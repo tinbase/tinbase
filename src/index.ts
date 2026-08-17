@@ -341,12 +341,23 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
       return new Response(null, { status: 204, headers: CORS_HEADERS })
     }
     if (path === '/' || path === '/health') {
-      return withCors(
-        new Response(JSON.stringify({ name: 'tinbase', status: 'healthy' }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        })
-      )
+      try {
+        await db.query('select 1')
+        return withCors(
+          new Response(JSON.stringify({ name: 'tinbase', status: 'healthy' }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        )
+      } catch (err: any) {
+        log(`health check database query failed: ${err?.message ?? String(err)}`)
+        return withCors(
+          new Response(JSON.stringify({ name: 'tinbase', status: 'unhealthy' }), {
+            status: 503,
+            headers: { 'content-type': 'application/json' },
+          })
+        )
+      }
     }
 
     // studio SPA - serve the shell for every /_/* route so deep links work.
