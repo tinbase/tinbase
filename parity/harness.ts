@@ -78,6 +78,7 @@ async function main() {
     dbEngine = await createNativeEngine({ dataDir: join(mkdtempSync(join(tmpdir(), 'parity-')), 'pg') })
   }
   backend = await createBackend({ engine: dbEngine, migrations: [{ name: '20240101000000_parity', sql: SCHEMA }] })
+  // Reuse the tag so normalized results are comparable.
   const tag = Math.random().toString(36).slice(2, 8)
   const tb = clientsFor('http://localhost:54321', backend.anonKey, backend.serviceRoleKey, (i, init) =>
     backend.fetch(new Request(i, init))
@@ -115,7 +116,7 @@ async function main() {
     }
     console.log(`  comparing normalized results against real supabase at ${url}\n`)
     const sb = clientsFor(url, anonKey, serviceKey)
-    const sbResults = await runAll(sb.anon, sb.service, Math.random().toString(36).slice(2, 8))
+    const sbResults = await runAll(sb.anon, sb.service, tag)
     // conformance is measured over scenarios that SHOULD match real supabase;
     // documented tinbase-only deviations are reported but not counted against it
     const comparable = SCENARIOS.filter((s) => !s.tinbaseOnly)

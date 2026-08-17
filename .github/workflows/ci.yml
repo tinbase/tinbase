@@ -23,3 +23,33 @@ jobs:
         run: npm test
       - name: Tests (native engine)
         run: TINBASE_TEST_ENGINE=native npm test
+
+  # Keep this job non-blocking while known parity gaps remain.
+  parity-supabase:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v2
+        with:
+          version: latest
+      - run: npm ci
+      - name: Prepare parity project
+        run: |
+          supabase init
+          mkdir -p supabase/migrations
+          cp parity/schema.sql supabase/migrations/20240101000000_parity.sql
+      - name: Start real Supabase stack
+        run: supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor,postgres-meta
+      - name: Compare tinbase with Supabase
+        run: |
+          eval "$(supabase status -o env)"
+          SUPABASE_URL="$API_URL" \
+          SUPABASE_ANON_KEY="$ANON_KEY" \
+          SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" \
+          npm run parity -- --compare

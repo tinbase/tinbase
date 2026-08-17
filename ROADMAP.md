@@ -63,7 +63,7 @@ the "runs my real app" bar forward. Check items off as they land.
 - [x] Shared scenario programs (supabase-js) — `parity/scenarios.ts`
 - [x] Self-scored harness runs against tinbase on both engines — `npm run parity` (16/16)
 - [x] `--compare` diffs normalized results against a real `supabase start` (needs Docker), excluding documented tinbase-only deviations
-- [ ] Wire `--compare` into CI as an informational job (once a CI Docker path is set up)
+- [x] Wire `--compare` into CI as an informational job — starts a disposable `supabase start` stack and reports conformance without blocking required checks
 
 ### Phase 1 — Auth completeness (the #1 real-app blocker)
 
