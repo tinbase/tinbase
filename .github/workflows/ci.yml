@@ -7,7 +7,19 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    # Windows is a supported target but a different one: the native embedded
+    # Postgres engine is macOS/Linux only (src/cli.ts), so Windows always runs
+    # the wasm engine and skips the native pass below.
+    # Not blocking yet - it has never run here, and first-time Windows failures
+    # tend to be path/temp-dir assumptions in the harness rather than product
+    # bugs. Drop continue-on-error once it is reliably green.
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    strategy:
+      # a Windows failure must not cancel the Linux run and hide its result
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,6 +34,7 @@ jobs:
       - name: Tests (wasm engine)
         run: npm test
       - name: Tests (native engine)
+        if: runner.os != 'Windows'
         run: TINBASE_TEST_ENGINE=native npm test
 
   # Keep this job non-blocking while known parity gaps remain.
