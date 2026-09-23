@@ -57,14 +57,16 @@ export class QueryBuilder {
 
   /** pg-mem can't bind a table alias in UPDATE/DELETE; omit it for subset engines. */
   private aliasMutations: boolean
+  private captureMutationRows: boolean
 
   constructor(
     private schema: string,
     private info: SchemaInfo,
     private q: ParsedQuery,
-    opts?: { aliasMutations?: boolean }
+    opts?: { aliasMutations?: boolean; captureMutationRows?: boolean }
   ) {
     this.aliasMutations = opts?.aliasMutations ?? true
+    this.captureMutationRows = opts?.captureMutationRows ?? false
   }
 
   private nextAlias(): string {
@@ -219,7 +221,10 @@ export class QueryBuilder {
     }
 
     const insert = `insert into ${this.qualify(table)} (${columns.map(quoteIdent).join(', ')}) values ${valuesSql}${conflict}`
-    if (!opts.returning) return { sql: insert, params }
+    if (!opts.returning) {
+      this.assertAllPathsConsumed()
+      return { sql: insert, params }
+    }
     return { sql: this.wrapMutation(insert, table), params }
   }
 
@@ -237,8 +242,10 @@ export class QueryBuilder {
     const asClause = alias ? ` as ${quoteIdent(alias)}` : ''
     const where = this.baseWhere(alias, [])
     const update = `update ${this.qualify(table)}${asClause} set ${sets.join(', ')}${where} returning *`
-    this.assertAllPathsConsumed()
-    if (!opts.returning) return { sql: update.replace(/ returning \*$/, ''), params }
+    if (!opts.returning) {
+      this.assertAllPathsConsumed()
+      return { sql: update.replace(/ returning \*$/, ''), params }
+    }
     return { sql: this.wrapMutation(update, table, true), params }
   }
 
@@ -249,8 +256,10 @@ export class QueryBuilder {
     const asClause = alias ? ` as ${quoteIdent(alias)}` : ''
     const where = this.baseWhere(alias, [])
     const del = `delete from ${this.qualify(table)}${asClause}${where} returning *`
-    this.assertAllPathsConsumed()
-    if (!opts.returning) return { sql: del.replace(/ returning \*$/, ''), params: [] }
+    if (!opts.returning) {
+      this.assertAllPathsConsumed()
+      return { sql: del.replace(/ returning \*$/, ''), params: [] }
+    }
     return { sql: this.wrapMutation(del, table, true), params: [] }
   }
 
@@ -258,15 +267,14 @@ export class QueryBuilder {
   private wrapMutation(mutation: string, table: string, alreadyHasReturning = false): string {
     const withReturning = alreadyHasReturning ? mutation : `${mutation} returning *`
     const { exprs, innerConds } = this.buildSelectList(this.q.select, table, '_mut', [])
-    if (innerConds.length > 0) {
-      throw new ApiError(400, {
-        code: 'PGRST100',
-        message: 'inner join embeds are not supported on mutation responses',
-        details: null,
-        hint: null,
-      })
-    }
-    return `with _mut as (${withReturning}) select coalesce(json_agg(row_to_json(_r)), ${AGG_EMPTY}) as body from (select ${exprs.join(', ')} from _mut) _r`
+    this.assertAllPathsConsumed()
+    const where = innerConds.length > 0 ? ` where ${innerConds.join(' and ')}` : ''
+    // Minimal-bootstrap engines synthesize CDC in JS. Keep all affected rows
+    // separate from the representation, which !inner can filter down.
+    const changes = this.captureMutationRows
+      ? `, (select coalesce(json_agg(row_to_json(_mut)), ${AGG_EMPTY}) from _mut) as changes`
+      : ''
+    return `with _mut as (${withReturning}) select coalesce(json_agg(row_to_json(_r)), ${AGG_EMPTY}) as body${changes} from (select ${exprs.join(', ')} from _mut${where}) _r`
   }
 
   // ── select list & embeds ──────────────────────────────────────────────

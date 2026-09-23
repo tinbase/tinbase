@@ -78,6 +78,16 @@ function rowsToCsv(rows: unknown[]): string {
   return lines.join('\n')
 }
 
+/** PGRST116: the singular-object media type was requested but `count` rows came back. */
+function notSingular(count: number): ApiError {
+  return new ApiError(406, {
+    code: 'PGRST116',
+    message: 'JSON object requested, multiple (or no) rows returned',
+    details: `The result contains ${count} rows`,
+    hint: null,
+  })
+}
+
 /** Dispatches /rest/v1/* requests to table or RPC handling and builds responses. */
 export class RestHandler {
   /** Schemas reachable through the Data API for non-privileged roles (PostgREST db-schemas). */
@@ -152,7 +162,10 @@ export class RestHandler {
       q.limits.set('', requested === undefined ? this.maxRows : Math.min(requested, this.maxRows))
     }
     const info = await this.db.getSchemaInfo(schema)
-    const builder = new QueryBuilder(schema, info, q, { aliasMutations: !this.db.engine.minimalBootstrap })
+    const builder = new QueryBuilder(schema, info, q, {
+      aliasMutations: !this.db.engine.minimalBootstrap,
+      captureMutationRows: this.db.jsCdc,
+    })
 
     switch (method) {
       case 'GET':
@@ -261,17 +274,21 @@ export class RestHandler {
       cdc: { schema: string; table: string; type: 'INSERT' | 'UPDATE' | 'DELETE' } | null
     }
   ): Promise<Response> {
-    const { rows, affected } = await this.db.withContext(ctx, async (query) => {
+    const { rows, affected, changes } = await this.db.withContext(ctx, async (query) => {
       const res = await query(built.sql, built.params)
       if (opts.queryReturning) {
-        return { rows: (res.rows[0] as { body: unknown[] }).body, affected: null }
+        const result = res.rows[0] as { body: unknown[]; changes?: Record<string, unknown>[] }
+        // PostgREST rolls back a singular mutation whose representation isn't
+        // exactly one row; throwing here aborts the transaction the same way.
+        if (opts.wantsObject && result.body.length !== 1) throw notSingular(result.body.length)
+        return { rows: result.body, affected: null, changes: result.changes }
       }
-      return { rows: null, affected: res.affectedRows ?? 0 }
+      return { rows: null, affected: res.affectedRows ?? 0, changes: undefined }
     })
 
     // synthesize CDC events for trigger-less engines (pg-mem)
-    if (opts.cdc && rows) {
-      this.db.emitCdc(opts.cdc, rows as Record<string, unknown>[])
+    if (opts.cdc && changes) {
+      this.db.emitCdc(opts.cdc, changes)
     }
 
     const countHeader: Record<string, string> =
@@ -316,14 +333,7 @@ export class RestHandler {
     }
 
     if (opts.wantsObject) {
-      if (rows.length !== 1) {
-        return jsonResponse(406, {
-          code: 'PGRST116',
-          message: 'JSON object requested, multiple (or no) rows returned',
-          details: `The result contains ${rows.length} rows`,
-          hint: null,
-        })
-      }
+      if (rows.length !== 1) throw notSingular(rows.length)
       headers['content-type'] = `${OBJECT_MEDIA}; charset=utf-8`
       return new Response(opts.head ? null : JSON.stringify(rows[0]), {
         status: opts.status,

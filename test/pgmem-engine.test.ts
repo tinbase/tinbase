@@ -105,6 +105,38 @@ describe('pg-mem engine (lite / preview)', () => {
     expect(del.data!.length).toBe(1)
   })
 
+  it('keeps CDC events for mutations hidden by an inner embed', async () => {
+    const events: string[] = []
+    const unsubscribe = await backend.db.onCdcEvent((event) => {
+      if (event.table === 'sessions') events.push(`${event.type}:${event.record?.id ?? event.old_record?.id}`)
+    })
+    try {
+      const result = await supabase.from('sessions').insert([
+        { id: 'matched', athlete_id: 'seeded', velocity: 1 },
+        { id: 'unmatched', athlete_id: null, velocity: 2 },
+      ]).select('id,athlete:athletes!inner(name)')
+      expect(result.error).toBeNull()
+      expect(result.data).toEqual([{ id: 'matched', athlete: { name: 'From Seed' } }])
+      expect(events).toEqual(['INSERT:matched', 'INSERT:unmatched'])
+      events.length = 0
+
+      const updated = await supabase.from('sessions').update({ velocity: 3 })
+        .in('id', ['matched', 'unmatched']).select('id,athlete:athletes!inner(name)')
+      expect(updated.error).toBeNull()
+      expect(updated.data).toEqual([{ id: 'matched', athlete: { name: 'From Seed' } }])
+      expect(events).toEqual(['UPDATE:matched', 'UPDATE:unmatched'])
+      events.length = 0
+
+      const deleted = await supabase.from('sessions').delete()
+        .in('id', ['matched', 'unmatched']).select('id,athlete:athletes!inner(name)')
+      expect(deleted.error).toBeNull()
+      expect(deleted.data).toEqual([{ id: 'matched', athlete: { name: 'From Seed' } }])
+      expect(events).toEqual(['DELETE:matched', 'DELETE:unmatched'])
+    } finally {
+      unsubscribe()
+    }
+  })
+
   it('email/password auth works', async () => {
     const { data, error } = await supabase.auth.signUp({ email: 'pm@example.com', password: 'password123' })
     expect(error).toBeNull()

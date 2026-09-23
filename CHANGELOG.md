@@ -4,6 +4,19 @@ All notable changes to tinbase are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and versions follow semver
 (pre-1.0, minor bumps may include breaking changes).
 
+## [Unreleased]
+
+### Fixed
+- **`!inner` embeds on mutation representations.** `PATCH`/`POST`/`DELETE` with
+  `Prefer: return=representation` and a `!inner` embed failed with `PGRST100`, and a filter on
+  the embed (`person.name=eq.Ada`) failed earlier with `PGRST108`. The inner condition now
+  filters only the returned rows, as in PostgREST: every targeted row is still written, and
+  only the matching ones come back. On pg-mem, change events are emitted for every written
+  row, not just the returned ones.
+- **Singular mutations roll back when the result isn't one row.** A write requested with the
+  `vnd.pgrst.object` media type (`.single()`) that returned zero or several rows answered
+  `PGRST116` but kept the write. It is now undone, matching PostgREST.
+
 ## [0.15.2]
 
 ### Fixed
