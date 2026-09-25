@@ -4,6 +4,27 @@ All notable changes to tinbase are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and versions follow semver
 (pre-1.0, minor bumps may include breaking changes).
 
+## [Unreleased]
+
+### Fixed
+
+- `max_frequency` is now measured the way GoTrue measures it: against the timestamp the flow
+  last wrote on the user row, rather than one window shared by every flow that can mail an
+  address. The mapping is GoTrue's, quirks included - a signup confirmation is measured by
+  `confirmation_sent_at`, while a magic link and a password recovery share `recovery_sent_at`,
+  because GoTrue mints both from the recovery token. Previously a single window covered all of
+  them, so a magic link could block the password reset the same person asked for a moment
+  later, and a signup confirmation drew on nothing at all.
+- `confirmation_sent_at` and `recovery_sent_at` are written when that mail goes out. Both
+  columns are in the mirrored GoTrue schema and were never set, so they read NULL however much
+  mail an account had been sent - visible to anything reading the user row, Studio included.
+  Written only once the transport accepted the message: a provider that refused it has not
+  spent the window.
+- Where GoTrue differs deliberately: an address with no account has no row to measure, and
+  GoTrue lets those through. That makes a 429 proof the account exists, handing back the
+  enumeration that answering 200 from `/recover` for an unknown address exists to prevent.
+  Those fall back to an in-memory window keyed the same way, so the two are indistinguishable.
+
 ## [0.16.2]
 
 ### Security

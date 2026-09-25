@@ -120,6 +120,12 @@ function authError(status: number, errorCode: string, msg: string): Response {
  * `codeChallengeMethod` are the body fields a `flowType: 'pkce'` client
  * sends; their presence is what selects the PKCE variant of the link.
  */
+/**
+ * The `auth.users` timestamp a flow measures `max_frequency` against, using
+ * GoTrue's column for that flow. These are schema columns, never caller input.
+ */
+type SentAtColumn = 'confirmation_sent_at' | 'recovery_sent_at' | 'email_change_sent_at' | 'reauthentication_sent_at'
+
 interface EmailFlowOptions {
   flavor?: 'login' | 'confirm'
   redirectTo?: string | null
@@ -247,25 +253,8 @@ export class AuthHandler {
     )
   }
 
-  /**
-   * Enforce `max_frequency`: refuse a second auth email to the same address
-   * within the configured window (GoTrue's `over_email_send_rate_limit`).
-   *
-   * Keyed by recipient, not by caller, and checked before the account is looked
-   * up. Both matter: keying by caller lets someone rotate addresses and keep
-   * mailing one victim, and checking after the lookup would answer differently
-   * for an address that exists than for one that does not - handing back the
-   * account enumeration that answering 200 for unknown addresses exists to
-   * prevent.
-   */
-  private limitEmailFrequency(email: string): Response | null {
-    const seconds = this.settings.maxEmailFrequencySeconds
-    if (!this.rateLimiter || !seconds || seconds <= 0) return null
-    const retryAfter = this.rateLimiter.check('email_frequency', email.toLowerCase().trim(), Date.now(), {
-      limit: 1,
-      windowMs: seconds * 1000,
-    })
-    if (retryAfter === null) return null
+  /** GoTrue's 429 for `max_frequency`, with the seconds the caller must wait. */
+  private static tooSoon(retryAfter: number): Response {
     return new Response(
       JSON.stringify({
         code: 429,
@@ -274,6 +263,64 @@ export class AuthHandler {
       }),
       { status: 429, headers: { 'content-type': 'application/json; charset=utf-8', 'retry-after': String(retryAfter) } }
     )
+  }
+
+  /**
+   * Enforce `max_frequency` the way GoTrue does: against the timestamp that
+   * flow last wrote on the user row, not against one budget per address.
+   *
+   * Which column a flow measures itself by is GoTrue's mapping, quirks
+   * included - a magic link is measured by `recovery_sent_at`, the same column
+   * password recovery uses, because GoTrue mints both from the recovery token.
+   * Sharing that budget is therefore correct rather than an oversight; a
+   * confirmation, by contrast, has its own. An app that sets `max_frequency`
+   * in config.toml gets the pacing Supabase's docs describe, which is the
+   * point of spelling it the same way.
+   *
+   * An address with no account has no row to measure, so those fall back to an
+   * in-memory window keyed the same way. GoTrue simply lets them through,
+   * which makes a 429 proof that an account exists - `/recover` answers 200
+   * for an address it has never seen precisely so the response cannot be used
+   * to enumerate accounts, and a frequency check that only ever fires for real
+   * users hands that back. The fallback keeps the two indistinguishable.
+   */
+  private async limitEmailFrequency(email: string, column: SentAtColumn): Promise<Response | null> {
+    const seconds = this.settings.maxEmailFrequencySeconds
+    if (!seconds || seconds <= 0) return null
+    const normalized = email.toLowerCase().trim()
+
+    // `column` is one of the four literals in SentAtColumn, never caller input.
+    const res = await this.db.query(
+      `select extract(epoch from (now() - ${column}))::int as elapsed
+       from auth.users where email = $1`,
+      [normalized]
+    )
+    const row = res.rows[0] as { elapsed: number | null } | undefined
+
+    if (row) {
+      // A row exists: the column is the authority, and it survives a restart,
+      // which an in-memory counter does not.
+      if (row.elapsed !== null && row.elapsed < seconds) {
+        return AuthHandler.tooSoon(Math.max(1, seconds - row.elapsed))
+      }
+      return null
+    }
+
+    if (!this.rateLimiter) return null
+    const retryAfter = this.rateLimiter.check(`email_frequency:${column}`, normalized, Date.now(), {
+      limit: 1,
+      windowMs: seconds * 1000,
+    })
+    return retryAfter === null ? null : AuthHandler.tooSoon(retryAfter)
+  }
+
+  /**
+   * Record that this flow has just mailed the address, so the next request is
+   * measured from now. Written only after the mail was accepted - a transport
+   * that refused it has not spent the window.
+   */
+  private async markEmailSent(userId: string, column: SentAtColumn): Promise<void> {
+    await this.db.query(`update auth.users set ${column} = now() where id = $1`, [userId])
   }
 
   /** Stop background timers (rate-limiter sweep). Called on backend close. */
@@ -381,8 +428,24 @@ export class AuthHandler {
     if (existing.rows.length > 0) {
       return authError(422, 'user_already_exists', 'User already registered')
     }
-    const hashed = await hashPassword(body.password)
+    // A signup that has to be confirmed sends mail, so it belongs under the
+    // same per-recipient budget as /otp and /recover. Repeating a signup was
+    // never the way to abuse that - the second is refused as
+    // `user_already_exists` before any mail is considered - but the
+    // confirmation not counting meant the three flows that can mail an address
+    // each spent the window separately, putting more into one inbox than
+    // `max_frequency` allows.
+    //
+    // Checked before the row is written, so a refusal leaves no half-made
+    // account behind, and only when confirmation is on: under autoconfirm
+    // there is no email to pace, and spending the budget would block a flow
+    // that would actually use it.
     const autoconfirm = this.settings.autoconfirm
+    if (!autoconfirm) {
+      const tooSoon = await this.limitEmailFrequency(email, 'confirmation_sent_at')
+      if (tooSoon) return tooSoon
+    }
+    const hashed = await hashPassword(body.password)
     const res = await this.db.query(
       `insert into auth.users
          (aud, role, email, encrypted_password, email_confirmed_at, last_sign_in_at,
@@ -652,6 +715,9 @@ export class AuthHandler {
     const { code, linkToken } = minted
     const normalized = email.toLowerCase().trim()
     const kind = tokenType === 'otp' ? 'magiclink' : tokenType
+    // GoTrue's mapping: a confirmation has its own budget, while a magic link
+    // and a recovery share `recovery_sent_at`.
+    const sentAtColumn: SentAtColumn = flavor === 'confirm' ? 'confirmation_sent_at' : 'recovery_sent_at'
     let link = `${this.apiUrl}/auth/v1/verify?token=${linkToken}&type=${kind}`
     const redirectTo = resolveRedirect(
       opts.redirectTo,
@@ -703,6 +769,7 @@ export class AuthHandler {
         },
         this.config.hookFetch
       )
+      await this.markEmailSent(minted.user.id, sentAtColumn)
       return json(200, {})
     }
 
@@ -735,6 +802,7 @@ export class AuthHandler {
       text: template?.content ? htmlToText(html) : defaultText,
       html,
     })
+    await this.markEmailSent(minted.user.id, sentAtColumn)
     return json(200, {})
   }
 
@@ -746,7 +814,7 @@ export class AuthHandler {
       code_challenge_method?: string
     }
     if (!body.email) return authError(400, 'validation_failed', 'email is required')
-    const tooSoon = this.limitEmailFrequency(body.email)
+    const tooSoon = await this.limitEmailFrequency(body.email, 'recovery_sent_at')
     if (tooSoon) return tooSoon
     return this.issueToken(body.email, 'otp', body.create_user !== false, {
       redirectTo: url.searchParams.get('redirect_to'),
@@ -761,7 +829,7 @@ export class AuthHandler {
       code_challenge_method?: string
     }
     if (!body.email) return authError(400, 'validation_failed', 'email is required')
-    const tooSoon = this.limitEmailFrequency(body.email)
+    const tooSoon = await this.limitEmailFrequency(body.email, 'recovery_sent_at')
     if (tooSoon) return tooSoon
     // GoTrue answers 200 for an address it has never seen, so the response
     // can't be used to enumerate which emails have accounts. supabase-js apps
