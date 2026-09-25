@@ -36,6 +36,17 @@ export interface AuthSettings {
    * it caps what any one mailbox can be subjected to no matter who asks.
    */
   maxEmailFrequencySeconds: number
+  /**
+   * Confirm an email change from both addresses, not just the new one
+   * (config.toml `[auth.email] secure_email_change_enabled`, GoTrue's
+   * MAILER_SECURE_EMAIL_CHANGE_ENABLED).
+   *
+   * On by default, as it is in Supabase. With it off, whoever holds a live
+   * session can move the account to an address of their choosing and the old
+   * one never hears about it; with it on, the change needs a click from the
+   * address that is losing the account as well as the one gaining it.
+   */
+  secureEmailChange: boolean
   /** Max MFA factors a user may enroll (auth.mfa.max_enrolled_factors). */
   maxEnrolledFactors: number
   /** Allow TOTP enrollment (auth.mfa.totp.enroll_enabled). */
@@ -54,6 +65,7 @@ export const DEFAULT_AUTH_SETTINGS: AuthSettings = {
   otpLength: 6,
   otpExpirySeconds: 3600,
   maxEmailFrequencySeconds: 60,
+  secureEmailChange: true,
   maxEnrolledFactors: 10,
   totpEnrollEnabled: true,
   totpVerifyEnabled: true,
@@ -88,6 +100,7 @@ function sanitize(raw: Record<string, unknown>): AuthSettings {
     // a day is worse than one that is slightly too short.
     s.maxEmailFrequencySeconds = Math.min(3600, Math.floor(raw.maxEmailFrequencySeconds))
   }
+  if (typeof raw.secureEmailChange === 'boolean') s.secureEmailChange = raw.secureEmailChange
   if (typeof raw.maxEnrolledFactors === 'number' && Number.isFinite(raw.maxEnrolledFactors) && raw.maxEnrolledFactors > 0) {
     s.maxEnrolledFactors = Math.floor(raw.maxEnrolledFactors)
   }
