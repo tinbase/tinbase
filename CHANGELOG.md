@@ -4,7 +4,27 @@ All notable changes to tinbase are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and versions follow semver
 (pre-1.0, minor bumps may include breaking changes).
 
-## [Unreleased]
+## [0.17.0]
+
+### Security
+
+- The local email inbox is no longer served on a network-exposed bind. `/inbox` is
+  unauthenticated and shows every captured message in full, so on a host reachable beyond
+  loopback it handed anyone who asked the magic link, confirmation link and OTP for any address
+  they cared to name. It was mounted whenever no mailer was configured, with nothing else
+  gating it - so an instance that lost its mail settings started serving them. It now draws the
+  same line `enforceRedirectAllowList` draws. Capture is unchanged, so `backend.inbox` still
+  works in tests, and the startup banner says plainly when auth email is unconfigured on an
+  exposed host.
+
+### Changed
+
+- SMTP settings that fail to load no longer take the database down with them, when they came
+  from the environment. A project's own `[auth.email.smtp]` still exits at startup - its author
+  is reading that output, and a typo should stop them there. Platform-injected `TINBASE_SMTP_*`
+  now logs, disables auth email, and leaves everything else running: one platform pushes the
+  same values to every tenant it hosts, so a single bad address used to stop every app rather
+  than just their email. A misconfiguration that breaks email should break email.
 
 ### Fixed
 
@@ -35,6 +55,16 @@ All notable changes to tinbase are documented here. The format follows
   Those fall back to an in-memory window keyed the same way, so the two are indistinguishable.
 
 ## [0.16.2]
+
+### Added
+
+- `API_EXTERNAL_URL` separates where this server answers from where the application lives,
+  accepted as `TINBASE_API_EXTERNAL_URL`, `GOTRUE_API_EXTERNAL_URL`, `API_EXTERNAL_URL` or
+  `api_external_url` in config.toml. Emailed links are built on it and tokens are issued by it,
+  while `site_url` stays the app a finished flow returns to. Collapsing the two forces a choice
+  between links that resolve and a redirect that lands somewhere useful. Defaults to `site_url`,
+  so a deployment that has not separated them is unaffected. (Shipped in 0.16.2; recorded here
+  after the fact, having been missed at release.)
 
 ### Security
 
