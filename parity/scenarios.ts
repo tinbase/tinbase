@@ -157,6 +157,84 @@ export const SCENARIOS: Scenario[] = [
     expect: (r) => ok(r) && r.bSees === 0 && r.serviceSees,
   },
 
+  // ── Auth: email ──
+  //
+  // The mail itself cannot be compared - tinbase captures it, `supabase start`
+  // puts it in Inbucket - so these compare what the API says, which is where
+  // the parity-sensitive behaviour lives anyway.
+  {
+    name: 'password reset for an unknown address answers 200',
+    module: 'auth',
+    run: async ({ anon, tag }) => {
+      // Answering differently for an address that has no account would let the
+      // endpoint be used to enumerate who has one.
+      const r = await anon.auth.resetPasswordForEmail(`ghost-${tag}@example.com`)
+      return { error: r.error }
+    },
+    expect: (r) => ok(r),
+  },
+  {
+    name: 'resend for an unknown address answers 200 and enrolls nobody',
+    module: 'auth',
+    run: async ({ anon, service, tag }) => {
+      const email = `noaccount-${tag}@example.com`
+      const r = await anon.auth.resend({ type: 'signup', email })
+      const { data } = await service.auth.admin.listUsers()
+      return { error: r.error, created: (data?.users ?? []).some((u) => u.email === email) }
+    },
+    // A resend repeats a mail an address has already been sent; it must never
+    // be the thing that signs someone up.
+    expect: (r) => ok(r) && r.created === false,
+  },
+  {
+    name: 'a token_hash that was never issued yields no session',
+    module: 'auth',
+    run: async ({ anon }) => {
+      const r = await anon.auth.verifyOtp({ token_hash: 'not-a-real-token-at-all', type: 'email' })
+      return { hasSession: !!r.data.session, error: r.error }
+    },
+    expect: (r) => !!r.error && !r.hasSession,
+  },
+  {
+    name: 'a bare six-digit code with no address yields no session',
+    module: 'auth',
+    run: async ({ anon }) => {
+      // Supabase is safe here because token_hash is a hash of the address and
+      // the code together, so there is nothing to look a bare code up by.
+      const r = await anon.auth.verifyOtp({ token_hash: '123456', type: 'email' })
+      return { hasSession: !!r.data.session, error: r.error }
+    },
+    expect: (r) => !!r.error && !r.hasSession,
+  },
+  {
+    name: 'signing up an address twice is refused',
+    module: 'auth',
+    run: async ({ anon, tag }) => {
+      const email = `dup-${tag}@example.com`
+      await anon.auth.signUp({ email, password: 'password123' })
+      await anon.auth.signOut()
+      const second = await anon.auth.signUp({ email, password: 'password123' })
+      await anon.auth.signOut()
+      return { error: second.error, code: second.error?.code }
+    },
+    expect: (r) => !!r.error,
+  },
+  {
+    name: 'changing an address takes effect at once when confirmations are off',
+    module: 'auth',
+    run: async ({ anon, tag }) => {
+      // Both default to autoconfirm, where there is no confirmation mail to
+      // wait for. With confirmations on the address is parked instead, which
+      // this configuration cannot exercise.
+      await anon.auth.signUp({ email: `move-${tag}@example.com`, password: 'password123' })
+      const r = await anon.auth.updateUser({ email: `moved-${tag}@example.com` })
+      const email = r.data.user?.email
+      await anon.auth.signOut()
+      return { email, movedTo: email === `moved-${tag}@example.com`, error: r.error }
+    },
+    expect: (r) => ok(r) && r.movedTo,
+  },
+
   // ── Storage ──
   {
     name: 'bucket + upload + download',
