@@ -162,6 +162,22 @@ function authEmailHtml(o: { lead: string; action: string; link: string; code: st
 }
 
 /** A cryptographically-random numeric OTP of `length` digits (6-10). */
+/**
+ * Whether knowing `token` proves nothing on its own.
+ *
+ * An OTP is six to ten digits - a few hundred thousand guesses, which is
+ * nothing without the address it was sent to. The link token is 24 random
+ * bytes in base64url, which is not guessable and is all an emailed link can
+ * carry, so it stays redeemable unscoped.
+ *
+ * Decided from the token itself rather than from `token_type`, because both
+ * rows a recovery mints share one type - the shape is the only honest
+ * discriminator.
+ */
+function isGuessableToken(token: string): boolean {
+  return token.length < 20 || /^\d+$/.test(token)
+}
+
 function randomOtp(length: number): string {
   const n = Math.max(6, Math.min(10, Math.floor(length)))
   const buf = new Uint32Array(n)
@@ -296,7 +312,10 @@ export class AuthHandler {
       if (path === 'recover' && method === 'POST') return this.limit('recover', req) ?? (await this.sendRecovery(req, url))
       if (['magiclink', 'resend'].includes(path) && method === 'POST')
         return this.limit('otp', req) ?? (await this.sendOtp(req, url))
-      if (path === 'verify' && method === 'POST') return await this.verifyToken(req)
+      if (path === 'verify' && method === 'POST') return this.limit('verify', req) ?? (await this.verifyToken(req))
+      // Deliberately unlimited, unlike the POST above: a link carries no email,
+      // so after the scoping guard in redeem() this path can only redeem the
+      // 24-byte link token. There is nothing here left to guess.
       if (path === 'verify' && method === 'GET') return await this.verifyLink(url)
       if (path === 'factors' && method === 'POST') return await this.enrollFactor(req)
       if (/^factors\/[^/]+\/challenge$/.test(path) && method === 'POST')
@@ -760,7 +779,17 @@ export class AuthHandler {
   private static readonly MAX_OTP_ATTEMPTS = 5
 
   private async redeem(token: string, types: string[], email?: string): Promise<UserRow | null> {
-    const normalizedEmail = email?.toLowerCase().trim() ?? null
+    // `|| null`, not `??`: an empty string is an absent address, not one to
+    // match on. Left as '' it reaches the query as `email = ''`, which matches
+    // nothing, and a client that sends `email: ''` beside a link token has a
+    // good token refused.
+    const normalizedEmail = email?.toLowerCase().trim() || null
+    // SECURITY: a guessable code is only a credential together with the address
+    // it was sent to. Unscoped, `token = $1` matches whoever happens to hold a
+    // live code - so one guess is tried against every account at once - and the
+    // attempt counter below needs the email to know what to count, so the
+    // lockout never fires either. Refuse rather than widen the match.
+    if (!normalizedEmail && isGuessableToken(token)) return null
     const res = await this.db.query(
       `delete from auth.one_time_tokens
        where token = $1 and token_type = any($2::text[])
