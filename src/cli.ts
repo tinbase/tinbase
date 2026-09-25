@@ -34,6 +34,7 @@ const NATIVE_SUPPORTED =
   (process.platform === 'darwin' || process.platform === 'linux') &&
   (process.arch === 'arm64' || process.arch === 'x64')
 import { deriveApiKeys } from './jwt.js'
+import { isNetworkExposed } from './security.js'
 import { DEFAULT_JWT_SECRET, TINBASE_VERSION } from './types.js'
 
 /** Parsed command + flags for one CLI invocation. */
@@ -765,8 +766,24 @@ async function main(): Promise<void> {
       mailer = m
       mailDescription = `SMTP ${smtpCfg!.host}:${smtpCfg!.port ?? 587} (from ${m.from})${cfg.auth.smtp?.host ? '' : ' [env]'}`
     } catch (e) {
-      console.error(`auth.email.smtp: ${e instanceof Error ? e.message : String(e)}`)
-      process.exit(1)
+      const detail = e instanceof Error ? e.message : String(e)
+      if (cfg.auth.smtp?.host) {
+        // The project's own config.toml: its author is looking at this output,
+        // and a typo should stop them now rather than surface as mail that
+        // never arrives.
+        console.error(`auth.email.smtp: ${detail}`)
+        process.exit(1)
+      }
+      // Injected by a platform for its tenants. Exiting here would take the
+      // database down with the mail settings - and since one platform pushes
+      // the same values to every tenant, a single bad address would stop every
+      // app it hosts, not just their email. A misconfiguration that breaks
+      // email should break email.
+      console.error(
+        `TINBASE_SMTP_*: ${detail}\n` +
+          '  Auth email is DISABLED for this instance; everything else is running. ' +
+          'Fix the platform SMTP settings and restart to enable it.'
+      )
     }
   } else if (resendApiKey && !sendEmailHook) {
     if (!mailFrom) {
@@ -912,7 +929,7 @@ async function main(): Promise<void> {
 
            API URL: ${server.url}
           Admin UI: ${server.url}/_/
-             Email: ${sendEmailHook || mailer ? mailDescription : `dev inbox at ${server.url}/inbox (not delivered)`}
+             Email: ${sendEmailHook || mailer ? mailDescription : isNetworkExposed(opts.host) ? 'NOT CONFIGURED - no auth email is sent, and /inbox is off on a network-exposed host' : `dev inbox at ${server.url}/inbox (not delivered)`}
     Mail templates: ${Object.keys(emailTemplates).length ? Object.keys(emailTemplates).join(', ') : 'built-in defaults'}
           Site URL: ${siteUrl}${apiExternalUrl === siteUrl ? '' : `\n      API external: ${apiExternalUrl}`}
     Redirects to: ${uriAllowList.length ? uriAllowList.join(', ') : 'the site URL origin only'}

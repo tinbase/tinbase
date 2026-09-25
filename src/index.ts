@@ -416,8 +416,13 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
       return new Response(ADMIN_HTML, { status: 200, headers })
     }
 
-    // local email inbox (dev-only; mounted only when using the default mailer)
-    if (inbox && (path === '/inbox' || path.startsWith('/inbox/'))) {
+    // Local email inbox: only with the default mailer, and only on a loopback
+    // bind. It is unauthenticated and shows every message in full, so on a
+    // network-exposed host it would hand anyone who asks the reset link and OTP
+    // for any address they care to name. Same line enforceRedirectAllowList
+    // draws, for the same reason. Capture still happens either way, so
+    // `backend.inbox` keeps working in tests.
+    if (inbox && !isNetworkExposed(config.host) && (path === '/inbox' || path.startsWith('/inbox/'))) {
       return withCors(inbox.serve(req, url))
     }
 
