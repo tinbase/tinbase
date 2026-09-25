@@ -4,6 +4,22 @@ All notable changes to tinbase are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and versions follow semver
 (pre-1.0, minor bumps may include breaking changes).
 
+## [Unreleased]
+
+### Added
+
+- `POST /auth/v1/admin/invite` - `auth.admin.inviteUserByEmail`. Creates the account and mails a
+  link that signs the recipient in so they can set a password. Without it an app had to fake an
+  invite: create the user with a password nobody knows, then tell them to use "forgot password",
+  which mails a *reset* for an account they have never heard of. An address belonging to a
+  confirmed account is refused with `email_exists` - that person has an account, and re-inviting
+  would mint a link that signs anyone holding it straight into it - while an unconfirmed one is
+  re-invited, since nobody has proved they hold it and the first invite may have been lost.
+  `invited_at` and `confirmation_sent_at` are stamped, the `invite` template is used if one is
+  configured, and the send-email hook receives `email_action_type: "invite"`. As in GoTrue it is
+  service_role only, ignores `disable_signup`, and is not paced by `max_frequency`: an operator
+  adding someone to their own project is not the flooding case that window exists for.
+
 ## [0.18.0]
 
 ### Security

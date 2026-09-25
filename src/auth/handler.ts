@@ -128,7 +128,7 @@ function authError(status: number, errorCode: string, msg: string): Response {
 type SentAtColumn = 'confirmation_sent_at' | 'recovery_sent_at' | 'email_change_sent_at' | 'reauthentication_sent_at'
 
 interface EmailFlowOptions {
-  flavor?: 'login' | 'confirm'
+  flavor?: 'login' | 'confirm' | 'invite'
   redirectTo?: string | null
   codeChallenge?: string | null
   codeChallengeMethod?: string | null
@@ -879,7 +879,12 @@ export class AuthHandler {
     const kind = tokenType === 'otp' ? 'magiclink' : tokenType
     // GoTrue's mapping: a confirmation has its own budget, while a magic link
     // and a recovery share `recovery_sent_at`.
-    const sentAtColumn: SentAtColumn = flavor === 'confirm' ? 'confirmation_sent_at' : 'recovery_sent_at'
+    // An invite is a confirmation of an address that has never been used, so
+    // GoTrue measures it by the same column - and does not pace it at all,
+    // since an operator inviting their own team is not the flooding case the
+    // window exists for.
+    const sentAtColumn: SentAtColumn =
+      flavor === 'confirm' || flavor === 'invite' ? 'confirmation_sent_at' : 'recovery_sent_at'
     let link = `${this.apiUrl}/auth/v1/verify?token=${linkToken}&type=${kind}`
     const redirectTo = resolveRedirect(
       opts.redirectTo,
@@ -908,13 +913,24 @@ export class AuthHandler {
     const copy =
       tokenType === 'recovery'
         ? { subject: 'Reset your password', action: 'Reset your password', lead: 'Reset your password with this link:', code: null }
-        : flavor === 'confirm'
-          ? { subject: 'Confirm your email', action: 'Confirm your email', lead: 'Confirm your email address with this link:', code }
-          : { subject: 'Your login code', action: 'Sign in', lead: 'Sign in with this link:', code }
+        : flavor === 'invite'
+          ? // Link only, like recovery: the recipient has no account yet and so
+            // no screen to type a code into, and the link is what creates the
+            // session they need in order to set a password.
+            { subject: "You've been invited", action: 'Accept the invitation', lead: "You've been invited. Accept with this link:", code: null }
+          : flavor === 'confirm'
+            ? { subject: 'Confirm your email', action: 'Confirm your email', lead: 'Confirm your email address with this link:', code }
+            : { subject: 'Your login code', action: 'Sign in', lead: 'Sign in with this link:', code }
     // The hook replaces rendering, so it is consulted before any of it happens.
     if (this.config.sendEmailHook) {
       const actionType: EmailActionType =
-        tokenType === 'recovery' ? 'recovery' : flavor === 'confirm' ? 'signup' : 'magiclink'
+        tokenType === 'recovery'
+          ? 'recovery'
+          : flavor === 'invite'
+            ? 'invite'
+            : flavor === 'confirm'
+              ? 'signup'
+              : 'magiclink'
       await callSendEmailHook(
         this.config.sendEmailHook,
         {
@@ -936,14 +952,22 @@ export class AuthHandler {
     }
 
     const templateName: EmailTemplateName =
-      tokenType === 'recovery' ? 'recovery' : flavor === 'confirm' ? 'confirmation' : 'magic_link'
+      tokenType === 'recovery'
+        ? 'recovery'
+        : flavor === 'invite'
+          ? 'invite'
+          : flavor === 'confirm'
+            ? 'confirmation'
+            : 'magic_link'
     const template = this.config.emailTemplates?.[templateName]
     const defaultText =
       tokenType === 'recovery'
         ? `Reset your password with this link: ${link}`
-        : flavor === 'confirm'
-          ? `Confirm your email address with this link: ${link}\n\nOr enter the code ${code}`
-          : `Your one-time code is ${code}\n\nOr sign in with this link: ${link}`
+        : flavor === 'invite'
+          ? `You've been invited. Accept with this link: ${link}`
+          : flavor === 'confirm'
+            ? `Confirm your email address with this link: ${link}\n\nOr enter the code ${code}`
+            : `Your one-time code is ${code}\n\nOr sign in with this link: ${link}`
     // A project's template replaces the body outright; its text companion is
     // derived from it so the message stays multipart. `code` is always exposed
     // here even though the default recovery mail omits it - a template that
@@ -1396,7 +1420,81 @@ export class AuthHandler {
     if (path === 'admin/generate_link' && method === 'POST') {
       return await this.generateLink(req)
     }
+    if (path === 'admin/invite' && method === 'POST') {
+      return await this.invite(req)
+    }
     return authError(404, 'not_found', `unknown admin endpoint`)
+  }
+
+  /**
+   * POST /auth/v1/admin/invite - `auth.admin.inviteUserByEmail`.
+   *
+   * Creates the account and mails a link that signs the recipient in, so they
+   * can set a password. Without it an app has to fake an invite by creating
+   * the user with a password nobody knows and telling them to use "forgot
+   * password" - which mails them a *reset* for an account they have never
+   * heard of.
+   *
+   * An address that already belongs to a confirmed account is refused: that
+   * person has an account, and re-inviting them would mint a link that signs
+   * anyone holding it straight into it. An unconfirmed one is re-invited
+   * instead, because nobody has proved they hold that address yet and the
+   * first invite may simply have been lost.
+   *
+   * Not subject to `disable_signup`, and deliberately not paced by
+   * `max_frequency`, as in GoTrue: this is an operator adding someone to their
+   * own project, not the flooding case those exist for.
+   */
+  private async invite(req: Request): Promise<Response> {
+    const body = (await req.json().catch(() => ({}))) as { email?: string; data?: Record<string, unknown> }
+    if (!body.email) return authError(400, 'validation_failed', 'email is required')
+    const email = body.email.toLowerCase().trim()
+
+    const existing = await this.db.query(`select id, email_confirmed_at from auth.users where email = $1`, [email])
+    const found = existing.rows[0] as { id: string; email_confirmed_at: Date | string | null } | undefined
+    if (found?.email_confirmed_at) {
+      return authError(422, 'email_exists', 'A user with this email address has already been registered')
+    }
+
+    let userId = found?.id
+    if (!userId) {
+      const created = await this.db.query(
+        `insert into auth.users (aud, role, email, raw_app_meta_data, raw_user_meta_data)
+         values ('authenticated', 'authenticated', $1, '{"provider":"email","providers":["email"]}', $2)
+         returning id`,
+        [email, JSON.stringify(body.data ?? {})]
+      )
+      userId = (created.rows[0] as { id: string }).id
+      await this.db.query(
+        `insert into auth.identities (user_id, provider, provider_id, identity_data)
+         values ($1, 'email', $2, $3)
+         on conflict (provider, provider_id) do nothing`,
+        [userId, userId, JSON.stringify({ sub: userId, email })]
+      )
+    } else if (body.data) {
+      await this.db.query(
+        `update auth.users
+            set raw_user_meta_data = coalesce(raw_user_meta_data, '{}'::jsonb) || $2::jsonb, updated_at = now()
+          where id = $1`,
+        [userId, JSON.stringify(body.data)]
+      )
+    }
+    // GoTrue stamps invited_at alongside confirmation_sent_at, so a row can be
+    // told apart from one that signed itself up.
+    await this.db.query(`update auth.users set invited_at = now(), updated_at = now() where id = $1`, [userId])
+
+    // createUser false: the row exists by now, and going through issueToken is
+    // what keeps an invite on the same token, template and hook path as every
+    // other emailed link rather than growing a second one.
+    const sent = await this.issueToken(email, 'otp', false, {
+      flavor: 'invite',
+      redirectTo: new URL(req.url).searchParams.get('redirect_to'),
+    })
+    if (sent.status !== 200) return sent
+
+    await this.audit('user_invited', { actorId: userId, actorEmail: email })
+    const res = await this.db.query(`select * from auth.users where id = $1`, [userId])
+    return json(200, this.userJson(res.rows[0] as UserRow))
   }
 
   /**
