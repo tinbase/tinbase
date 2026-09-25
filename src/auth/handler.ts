@@ -106,6 +106,7 @@ interface UserRow {
   phone: string | null
   phone_confirmed_at: Date | string | null
   is_anonymous: boolean | null
+  email_change: string | null
 }
 
 function authError(status: number, errorCode: string, msg: string): Response {
@@ -353,7 +354,7 @@ export class AuthHandler {
       if (path === 'signup' && method === 'POST') return this.limit('signup', req) ?? (await this.signup(req, url))
       if (path === 'token' && method === 'POST') return this.limit('token', req) ?? (await this.token(req, url))
       if (path === 'user' && method === 'GET') return await this.getUser(req)
-      if (path === 'user' && method === 'PUT') return await this.updateUser(req)
+      if (path === 'user' && method === 'PUT') return await this.updateUser(req, url)
       if (path === 'logout' && method === 'POST') return await this.logout(req)
       if (path === 'otp' && method === 'POST') return this.limit('otp', req) ?? (await this.sendOtp(req, url))
       if (path === 'recover' && method === 'POST') return this.limit('recover', req) ?? (await this.sendRecovery(req, url))
@@ -544,7 +545,7 @@ export class AuthHandler {
     return json(200, this.userJson(user, await this.getUserFactors(user.id), await this.getUserIdentities(user.id)))
   }
 
-  private async updateUser(req: Request): Promise<Response> {
+  private async updateUser(req: Request, url: URL): Promise<Response> {
     const user = await this.userFromBearer(req)
     if (!user) return authError(401, 'no_authorization', 'Invalid or expired token')
     const body = (await req.json().catch(() => ({}))) as {
@@ -558,14 +559,24 @@ export class AuthHandler {
     // usually a password) keeps the same id + data, flips is_anonymous off, and
     // records an email identity - matching supabase.auth.updateUser({ email }).
     const upgradingAnon = (user.is_anonymous ?? false) && !!body.email
+
+    // Changing the address on an account that already has one is a different
+    // operation from naming one for the first time, and only the first is an
+    // email change. An anonymous upgrade has no address to confirm from and
+    // nothing to lose if it is wrong, so it keeps taking effect immediately.
+    let pendingEmail: string | null = null
     if (body.email) {
       const email = body.email.toLowerCase().trim()
       const clash = await this.db.query(`select id from auth.users where email = $1 and id <> $2`, [email, user.id])
       if (clash.rows.length > 0) {
         return authError(422, 'email_exists', 'A user with this email address has already been registered')
       }
-      params.push(email)
-      sets.push(`email = $${params.length}, email_confirmed_at = now()`)
+      if (upgradingAnon || this.settings.autoconfirm || email === (user.email ?? '').toLowerCase()) {
+        params.push(email)
+        sets.push(`email = $${params.length}, email_confirmed_at = now()`)
+      } else {
+        pendingEmail = email
+      }
     }
     if (body.password) {
       if (body.password.length < this.settings.minPasswordLength) {
@@ -582,13 +593,16 @@ export class AuthHandler {
       sets.push(`is_anonymous = false`)
       sets.push(`raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{"provider":"email","providers":["email"]}'::jsonb`)
     }
-    if (sets.length === 0) return json(200, this.userJson(user))
-    params.push(user.id)
-    const res = await this.db.query(
-      `update auth.users set ${sets.join(', ')}, updated_at = now() where id = $${params.length} returning *`,
-      params
-    )
-    const updated = res.rows[0] as UserRow
+
+    let updated = user
+    if (sets.length > 0) {
+      params.push(user.id)
+      const res = await this.db.query(
+        `update auth.users set ${sets.join(', ')}, updated_at = now() where id = $${params.length} returning *`,
+        params
+      )
+      updated = res.rows[0] as UserRow
+    }
     if (upgradingAnon) {
       // record the email identity, unless one somehow already exists
       await this.db.query(
@@ -598,8 +612,156 @@ export class AuthHandler {
         [updated.id, updated.id, JSON.stringify({ sub: updated.id, email: updated.email })]
       )
     }
+
+    if (pendingEmail) {
+      const started = await this.startEmailChange(updated, pendingEmail, url.searchParams.get('redirect_to'))
+      if (started) return started
+      const res = await this.db.query(`select * from auth.users where id = $1`, [updated.id])
+      updated = (res.rows[0] as UserRow) ?? updated
+    }
     return json(200, this.userJson(updated))
   }
+
+  /**
+   * Begin an email change: park the new address, mint a token for each side,
+   * and mail them.
+   *
+   * The address does not move until the tokens come back. Writing it straight
+   * to `auth.users.email` - which is what this did - means a session is all it
+   * takes to walk an account to an address of the holder's choosing, with no
+   * confirmation from either end and nothing sent to the address losing it.
+   *
+   * With `secure_email_change_enabled` (the Supabase default) both ends have
+   * to click: the new address proves it exists and is reachable, and the
+   * current one gets a say in losing the account. The second token is what
+   * makes a stolen session insufficient on its own.
+   *
+   * Returns a Response only when the change could not be started.
+   */
+  private async startEmailChange(user: UserRow, newEmail: string, redirectTo: string | null): Promise<Response | null> {
+    const tooSoon = await this.limitEmailFrequency(user.email ?? newEmail, 'email_change_sent_at')
+    if (tooSoon) return tooSoon
+
+    const { newToken, currentToken } = await this.mintEmailChangeTokens(user, newEmail)
+
+    const redirect = resolveRedirect(
+      redirectTo,
+      this.config.siteUrl,
+      this.config.uriAllowList,
+      this.config.enforceRedirectAllowList
+    )
+    await this.mailEmailChange(user, newEmail, newEmail, newToken, 'email_change_new', redirect, redirectTo !== null)
+    if (currentToken) {
+      await this.mailEmailChange(user, user.email!, newEmail, currentToken, 'email_change_current', redirect, redirectTo !== null)
+    }
+    return null
+  }
+
+  /**
+   * Park the new address and mint a token per side, without sending anything.
+   *
+   * Shared with `admin/generate_link`, which needs the same tokens but hands
+   * them to the caller. One implementation so the two cannot disagree about
+   * how many sides there are or when the previous attempt is invalidated.
+   */
+  private async mintEmailChangeTokens(
+    user: UserRow,
+    newEmail: string
+  ): Promise<{ newToken: string; currentToken: string | null }> {
+    const secure = this.settings.secureEmailChange && !!user.email
+    const expiry = `${this.settings.otpExpirySeconds} seconds`
+    const newToken = randomToken(24)
+    const currentToken = secure ? randomToken(24) : null
+
+    // A second change replaces the first outright: leaving the old tokens live
+    // would let a link for a superseded address still land.
+    await this.db.query(
+      `delete from auth.one_time_tokens where user_id = $1 and token_type in ('email_change_new', 'email_change_current')`,
+      [user.id]
+    )
+    await this.db.query(
+      `insert into auth.one_time_tokens (user_id, email, token_type, token, expires_at)
+       values ($1, $2, 'email_change_new', $3, now() + $4::interval)`,
+      [user.id, newEmail, newToken, expiry]
+    )
+    if (currentToken) {
+      await this.db.query(
+        `insert into auth.one_time_tokens (user_id, email, token_type, token, expires_at)
+         values ($1, $2, 'email_change_current', $3, now() + $4::interval)`,
+        [user.id, user.email, currentToken, expiry]
+      )
+    }
+    await this.db.query(
+      `update auth.users
+         set email_change = $2, email_change_sent_at = now(), email_change_confirm_status = 0,
+             updated_at = now()
+       where id = $1`,
+      [user.id, newEmail]
+    )
+    return { newToken, currentToken }
+  }
+
+  /** One side of an email change, to whichever address that side belongs to. */
+  private async mailEmailChange(
+    user: UserRow,
+    to: string,
+    pending: string,
+    token: string,
+    action: 'email_change_new' | 'email_change_current',
+    redirect: string,
+    carryRedirect: boolean
+  ): Promise<void> {
+    let link = `${this.apiUrl}/auth/v1/verify?token=${token}&type=email_change`
+    if (carryRedirect) link += `&redirect_to=${encodeURIComponent(redirect)}`
+
+    if (this.config.sendEmailHook) {
+      // GoTrue sends one payload carrying both sides, so an endpoint can word
+      // them differently. token/token_hash are the side being asked, and
+      // token_new/token_hash_new the new address's - the fields that have been
+      // empty strings here since the hook was added, for want of this flow.
+      const isNew = action === 'email_change_new'
+      await callSendEmailHook(
+        this.config.sendEmailHook,
+        {
+          user: this.userJson(user),
+          email_data: {
+            token: '',
+            token_hash: token,
+            redirect_to: redirect,
+            email_action_type: action,
+            site_url: this.config.siteUrl,
+            token_new: '',
+            token_hash_new: isNew ? token : '',
+          },
+        },
+        this.config.hookFetch
+      )
+      return
+    }
+
+    const template = this.config.emailTemplates?.email_change
+    const lead =
+      action === 'email_change_new'
+        ? 'Confirm this address to finish moving your account to it:'
+        : `Confirm moving your account to ${pending}:`
+    const html = template?.content
+      ? renderTemplate(template.content, {
+          ConfirmationURL: link,
+          Token: '',
+          TokenHash: token,
+          RedirectTo: redirect,
+          SiteURL: this.config.siteUrl,
+          Email: to,
+        })
+      : authEmailHtml({ lead, action: 'Confirm email change', link, code: null })
+    await this.config.mailer.send({
+      to,
+      subject: template?.subject ?? 'Confirm your email change',
+      text: template?.content ? htmlToText(html) : `${lead} ${link}`,
+      html,
+    })
+  }
+
 
   /**
    * POST /auth/v1/logout[?scope=global|local|others]
@@ -960,8 +1122,86 @@ export class AuthHandler {
    */
   private static redeemTypes(type?: string): string[] {
     if (type === 'recovery') return ['recovery']
+    if (type === 'email_change') return ['email_change_new', 'email_change_current']
     if (type === 'magiclink') return ['magiclink']
     return ['otp', 'magiclink']
+  }
+
+  /** What a caller is told when one side of an email change is still outstanding. */
+  private static readonly EMAIL_CHANGE_PENDING_MSG =
+    'Confirmation link accepted. Please proceed to confirm link sent to the other email'
+
+  /**
+   * Redeem one side of an email change.
+   *
+   * Not routed through {@link redeem}, which exists for the login and recovery
+   * tokens and does things that are wrong here: it clears every live token for
+   * the address and stamps `last_sign_in_at`, and an email change is not a
+   * sign-in. It also cannot express the part that matters - that one click may
+   * not be enough.
+   *
+   * The address moves only once no side is left outstanding. With
+   * `secure_email_change_enabled` that means both tokens, in either order;
+   * with it off there is only ever the new address's. Deciding it by what
+   * remains in the table, rather than by counting clicks, is what makes the
+   * order irrelevant and a replay harmless - the row is gone the moment it is
+   * redeemed.
+   */
+  private async verifyEmailChange(
+    token: string
+  ): Promise<{ status: 'invalid' } | { status: 'pending' } | { status: 'done'; user: UserRow }> {
+    const res = await this.db.query(
+      `delete from auth.one_time_tokens
+        where token = $1 and token_type in ('email_change_new', 'email_change_current')
+          and expires_at > now()
+        returning user_id`,
+      [token]
+    )
+    const row = res.rows[0] as { user_id: string } | undefined
+    if (!row) return { status: 'invalid' }
+
+    const outstanding = await this.db.query(
+      `select 1 from auth.one_time_tokens
+        where user_id = $1 and token_type in ('email_change_new', 'email_change_current')
+          and expires_at > now()`,
+      [row.user_id]
+    )
+    if (outstanding.rows.length > 0) {
+      await this.db.query(
+        `update auth.users set email_change_confirm_status = 1, updated_at = now() where id = $1`,
+        [row.user_id]
+      )
+      return { status: 'pending' }
+    }
+
+    // `nullif` guards the case where the pending address was cleared in
+    // between: better to confirm the address already held than to blank it.
+    const done = await this.db.query(
+      `update auth.users
+          set email = coalesce(nullif(email_change, ''), email),
+              email_confirmed_at = now(),
+              email_change = '',
+              email_change_token_new = '',
+              email_change_token_current = '',
+              email_change_confirm_status = 0,
+              updated_at = now()
+        where id = $1
+        returning *`,
+      [row.user_id]
+    )
+    const user = done.rows[0] as UserRow | undefined
+    if (!user) return { status: 'invalid' }
+
+    // The email identity carries the address too, and getUser reads it back
+    // through user.identities - left alone it would still name the old one.
+    await this.db.query(
+      `update auth.identities
+          set identity_data = coalesce(identity_data, '{}'::jsonb) || jsonb_build_object('email', $2::text),
+              updated_at = now()
+        where user_id = $1 and provider = 'email'`,
+      [user.id, user.email]
+    )
+    return { status: 'done', user }
   }
 
   private async verifyToken(req: Request): Promise<Response> {
@@ -977,6 +1217,12 @@ export class AuthHandler {
     // string here.
     const token = body.token ?? body.token_hash
     if (!token) return authError(400, 'validation_failed', 'token is required')
+    if (body.type === 'email_change') {
+      const outcome = await this.verifyEmailChange(token)
+      if (outcome.status === 'invalid') return authError(403, 'otp_expired', 'Token has expired or is invalid')
+      if (outcome.status === 'pending') return json(200, { msg: AuthHandler.EMAIL_CHANGE_PENDING_MSG })
+      return json(200, await this.sessionFor(outcome.user))
+    }
     const user = await this.redeem(token, AuthHandler.redeemTypes(body.type), body.email)
     if (!user) return authError(403, 'otp_expired', 'Token has expired or is invalid')
     // A PKCE challenge parked for the link is moot once the code was typed in
@@ -997,6 +1243,38 @@ export class AuthHandler {
       this.config.uriAllowList,
       this.config.enforceRedirectAllowList
     )
+    if (type === 'email_change') {
+      const outcome = await this.verifyEmailChange(token)
+      if (outcome.status === 'invalid') {
+        return new Response(null, {
+          status: 303,
+          headers: { location: `${redirectTo}#error=access_denied&error_code=otp_expired` },
+        })
+      }
+      if (outcome.status === 'pending') {
+        // Nothing to hand back yet - the account is still on its old address
+        // until the other side answers, so there is no session to mint.
+        return new Response(null, {
+          status: 303,
+          headers: {
+            location: `${redirectTo}#message=${encodeURIComponent(AuthHandler.EMAIL_CHANGE_PENDING_MSG)}`,
+          },
+        })
+      }
+      const changed = (await this.sessionFor(outcome.user)) as {
+        access_token: string
+        refresh_token: string
+        expires_in: number
+      }
+      return new Response(null, {
+        status: 303,
+        headers: {
+          location:
+            `${redirectTo}#access_token=${changed.access_token}&refresh_token=${changed.refresh_token}` +
+            `&expires_in=${changed.expires_in}&token_type=bearer&type=email_change`,
+        },
+      })
+    }
     const user = await this.redeem(token, AuthHandler.redeemTypes(type))
     if (!user) {
       return new Response(null, { status: 303, headers: { location: `${redirectTo}#error=access_denied&error_code=otp_expired` } })
@@ -1146,11 +1424,10 @@ export class AuthHandler {
     if (!body.email) return authError(400, 'validation_failed', 'email is required')
     const type = body.type ?? 'magiclink'
 
-    // email_change_* would have to mint a token against a pending new address,
-    // which needs the email-change plumbing this handler doesn't have yet. Say
-    // so rather than returning a link that verifies as a plain login.
+    // The two sides of an email change mint against a pending address, so they
+    // need `new_email` as well and cannot share the flow below.
     if (type === 'email_change_current' || type === 'email_change_new') {
-      return authError(400, 'validation_failed', `generate_link type "${type}" is not supported yet`)
+      return await this.generateEmailChangeLink(type, body)
     }
     if (!['signup', 'invite', 'magiclink', 'recovery'].includes(type)) {
       return authError(400, 'validation_failed', `unsupported generate_link type: ${type}`)
@@ -1201,6 +1478,62 @@ export class AuthHandler {
       action_link: actionLink,
       email_otp: code,
       hashed_token: linkToken,
+      redirect_to: redirectTo,
+      verification_type: type,
+    })
+  }
+
+  /**
+   * `admin.generateLink({ type: 'email_change_current' | 'email_change_new' })`.
+   *
+   * Both sides are minted whichever is asked for - they are one change, and
+   * minting only the requested half would leave a secure change that can never
+   * complete. The caller gets the link for the side it named.
+   */
+  private async generateEmailChangeLink(
+    type: 'email_change_current' | 'email_change_new',
+    body: { email?: string; new_email?: string; redirect_to?: string }
+  ): Promise<Response> {
+    if (!body.email) return authError(400, 'validation_failed', 'email is required')
+    if (!body.new_email) return authError(400, 'validation_failed', `${type} requires new_email`)
+    const current = body.email.toLowerCase().trim()
+    const next = body.new_email.toLowerCase().trim()
+
+    const res = await this.db.query(`select * from auth.users where email = $1`, [current])
+    const user = res.rows[0] as UserRow | undefined
+    if (!user) return authError(404, 'user_not_found', 'User not found')
+    const clash = await this.db.query(`select id from auth.users where email = $1 and id <> $2`, [next, user.id])
+    if (clash.rows.length > 0) {
+      return authError(422, 'email_exists', 'A user with this address has already been registered')
+    }
+
+    const { newToken, currentToken } = await this.mintEmailChangeTokens(user, next)
+    // Asking for the current side when secure email change is off: there is no
+    // such token, and returning the new one under that name would quietly hand
+    // back a link that confirms the wrong half.
+    if (type === 'email_change_current' && !currentToken) {
+      return authError(
+        400,
+        'validation_failed',
+        'email_change_current requires secure_email_change_enabled; only the new address is confirmed'
+      )
+    }
+    const token = type === 'email_change_new' ? newToken : currentToken!
+
+    const redirectTo = resolveRedirect(
+      body.redirect_to,
+      this.config.siteUrl,
+      this.config.uriAllowList,
+      this.config.enforceRedirectAllowList
+    )
+    await this.audit('generate_link', { actorId: user.id, actorEmail: user.email, traits: { type } })
+    return json(200, {
+      ...this.userJson(user),
+      action_link:
+        `${this.apiUrl}/auth/v1/verify?token=${token}&type=email_change` +
+        `&redirect_to=${encodeURIComponent(redirectTo)}`,
+      email_otp: '',
+      hashed_token: token,
       redirect_to: redirectTo,
       verification_type: type,
     })
@@ -1534,6 +1867,10 @@ export class AuthHandler {
       aud: u.aud ?? 'authenticated',
       role: u.role ?? 'authenticated',
       email: u.email ?? '',
+      // GoTrue reports a change that has been asked for but not yet confirmed,
+      // so a client can say "we've emailed <new_email>" instead of showing the
+      // old address with no sign anything is pending.
+      new_email: u.email_change || undefined,
       email_confirmed_at: iso(u.email_confirmed_at),
       phone: u.phone ?? '',
       confirmed_at: iso(u.email_confirmed_at),

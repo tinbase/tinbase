@@ -159,8 +159,8 @@ describe('auth.admin.generateLink', () => {
     expect(res.status).toBe(403)
   })
 
-  it('rejects an unsupported type instead of minting a plain login link', async () => {
-    const res = await env.backend.fetch(
+  const generate = (body: unknown) =>
+    env.backend.fetch(
       new Request('http://localhost:54321/auth/v1/admin/generate_link', {
         method: 'POST',
         headers: {
@@ -168,10 +168,21 @@ describe('auth.admin.generateLink', () => {
           Authorization: `Bearer ${env.backend.serviceRoleKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ type: 'email_change_new', email: 'gl-change@example.test' }),
+        body: JSON.stringify(body),
       })
     )
+
+  it('rejects a type it has no flow for, instead of minting a plain login link', async () => {
+    const res = await generate({ type: 'phone_change', email: 'gl-change@example.test' })
     expect(res.status).toBe(400)
-    expect((await res.json()).msg).toContain('not supported yet')
+    expect((await res.json()).msg).toContain('unsupported generate_link type')
+  })
+
+  it('asks for new_email on an email change rather than guessing one', async () => {
+    // The two email-change types mint against a pending address, so the
+    // address alone is not enough to describe the link being asked for.
+    const res = await generate({ type: 'email_change_new', email: 'gl-change@example.test' })
+    expect(res.status).toBe(400)
+    expect((await res.json()).msg).toContain('new_email')
   })
 })

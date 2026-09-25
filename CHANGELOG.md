@@ -4,6 +4,40 @@ All notable changes to tinbase are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and versions follow semver
 (pre-1.0, minor bumps may include breaking changes).
 
+## [Unreleased]
+
+### Security
+
+- Changing the address on an account now has to be confirmed. `updateUser({ email })` wrote
+  straight to `auth.users.email` and stamped it confirmed on the spot, so a live session was the
+  only thing needed to move an account to an address of the holder's choosing - nothing was sent
+  to either address, and the one losing the account never heard about it. The new address is now
+  parked in `email_change` until confirmed, and with `secure_email_change_enabled` (on by
+  default, as in Supabase) both ends have to click: the new address proves it is reachable, and
+  the current one gets a say in losing the account. A stolen session is no longer sufficient on
+  its own.
+
+### Added
+
+- `[auth.email] secure_email_change_enabled`, GoTrue's `MAILER_SECURE_EMAIL_CHANGE_ENABLED`.
+  With it off, only the new address is asked and one click completes the change.
+- `admin.generateLink({ type: 'email_change_current' | 'email_change_new', email, new_email })`
+  mints an email-change link instead of refusing as unsupported. Both sides are minted whichever
+  is asked for, since they are one change and minting half of a secure change would leave one
+  that can never complete.
+- `verifyOtp({ type: 'email_change' })` and `GET /auth/v1/verify?type=email_change` redeem
+  either side. While one side is outstanding the caller is told so and gets no session; the
+  address moves, and a session is issued, only once none is left.
+- The `email_change` template, which existed as a name with no flow behind it, is now the
+  template those messages use. The send-email hook's `token_hash_new` carries the new address's
+  token, having been an empty string since the hook was added for want of this flow.
+- `new_email` on the user object, reporting a change asked for but not yet confirmed.
+
+### Fixed
+
+- An email change is paced by `email_change_sent_at`, the column GoTrue measures it by, which
+  like the others was never written.
+
 ## [0.17.0]
 
 ### Security
