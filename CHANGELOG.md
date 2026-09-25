@@ -4,15 +4,7 @@ All notable changes to tinbase are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and versions follow semver
 (pre-1.0, minor bumps may include breaking changes).
 
-## [Unreleased]
-
-### Changed
-
-- The parity harness covers email. `parity/scenarios.ts` had no email scenarios at all, so the
-  part of the surface most recently changed was also the part not being measured against a real
-  Supabase. Six added, comparing what the API says rather than what arrives in an inbox - the
-  mail itself is not comparable, since tinbase captures it and `supabase start` puts it in
-  Inbucket. Auth goes from 3 scenarios to 9.
+## [0.18.0]
 
 ### Security
 
@@ -40,6 +32,14 @@ All notable changes to tinbase are documented here. The format follows
   template those messages use. The send-email hook's `token_hash_new` carries the new address's
   token, having been an empty string since the hook was added for want of this flow.
 - `new_email` on the user object, reporting a change asked for but not yet confirmed.
+
+### Changed
+
+- The parity harness covers email. `parity/scenarios.ts` had no email scenarios at all, so the
+  part of the surface most recently changed was also the part not being measured against a real
+  Supabase. Six added, comparing what the API says rather than what arrives in an inbox - the
+  mail itself is not comparable, since tinbase captures it and `supabase start` puts it in
+  Inbucket. Auth goes from 3 scenarios to 9.
 
 ### Fixed
 
