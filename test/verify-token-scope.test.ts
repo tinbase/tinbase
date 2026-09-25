@@ -106,6 +106,31 @@ describe('verify: a guessable code must be scoped to its owner', () => {
     }
   })
 
+  it('accepts a link token when the client sends an empty email alongside it', async () => {
+    // `email: ''` is absent, not an address to match on. Treating it as one
+    // filters on `email = ''`, which matches nothing, and a perfectly good link
+    // token is refused.
+    const { b, outbox, hdr } = await boot()
+    try {
+      await b.fetch(new Request('https://db.example.dev/auth/v1/signup', {
+        method: 'POST', headers: hdr,
+        body: JSON.stringify({ email: 'blank@example.com', password: 'password123' }),
+      }))
+      await b.fetch(new Request('https://db.example.dev/auth/v1/recover', {
+        method: 'POST', headers: hdr, body: JSON.stringify({ email: 'blank@example.com' }),
+      }))
+      const link = outbox[outbox.length - 1].text.match(/token=([^&\s]+)/)?.[1]
+      const res = await b.fetch(new Request('https://db.example.dev/auth/v1/verify', {
+        method: 'POST', headers: hdr,
+        body: JSON.stringify({ token_hash: link, type: 'recovery', email: '' }),
+      }))
+      expect(res.status).toBe(200)
+      expect(await res.json()).toHaveProperty('access_token')
+    } finally {
+      await b.close()
+    }
+  })
+
   it('leaves the emailed link working, which carries no email of its own', async () => {
     const { b, outbox, hdr } = await boot()
     try {

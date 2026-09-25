@@ -68,21 +68,25 @@ describe('verify: the per-address attempt cap', () => {
     }
   })
 
-  it('does not let an unscoped guess burn someone else’s code', async () => {
+  it('cannot be sidestepped by dropping the email, on the login path too', async () => {
     const { backend, post } = await boot()
     try {
       await post('otp', { email: 'untouched@example.com' })
       const code = await loginCodeFor(backend, 'untouched@example.com')
 
-      // Refused before the query, so these cost the victim nothing. Were they
-      // counted, anyone could lock any address out of its own code by guessing
-      // at the whole table - a denial of service that needs no knowledge of who
-      // they are guessing against.
-      for (let i = 0; i < 10; i++) {
-        const blind = await post('verify', { token: '000000' })
-        expect(blind.status).toBe(403)
+      // The cap counts per address, so an attacker who sends no address used to
+      // get an uncounted, unlimited run at the table - and with no `type`, the
+      // default redeems the otp + magiclink pair, which is where a login code
+      // lives. Presenting the *correct* code here is the whole bypass.
+      for (let i = 0; i < 9; i++) {
+        expect((await post('verify', { token: '000000' })).status).toBe(403)
       }
+      const bypass = await post('verify', { token: code })
+      expect(bypass.status).toBe(403)
+      expect(await bypass.json()).not.toHaveProperty('access_token')
 
+      // And none of it counted against the owner: refused before the query, so
+      // an anonymous guesser cannot lock an address out of its own code.
       const real = await post('verify', { email: 'untouched@example.com', token: code, type: 'email' })
       expect(real.status).toBe(200)
       expect(await real.json()).toHaveProperty('access_token')

@@ -779,7 +779,11 @@ export class AuthHandler {
   private static readonly MAX_OTP_ATTEMPTS = 5
 
   private async redeem(token: string, types: string[], email?: string): Promise<UserRow | null> {
-    const normalizedEmail = email?.toLowerCase().trim() ?? null
+    // `|| null`, not `??`: an empty string is an absent address, not one to
+    // match on. Left as '' it reaches the query as `email = ''`, which matches
+    // nothing, and a client that sends `email: ''` beside a link token has a
+    // good token refused.
+    const normalizedEmail = email?.toLowerCase().trim() || null
     // SECURITY: a guessable code is only a credential together with the address
     // it was sent to. Unscoped, `token = $1` matches whoever happens to hold a
     // live code - so one guess is tried against every account at once - and the
