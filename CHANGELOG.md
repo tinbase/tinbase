@@ -4,6 +4,22 @@ All notable changes to tinbase are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and versions follow semver
 (pre-1.0, minor bumps may include breaking changes).
 
+## [0.16.2]
+
+### Security
+
+- `POST /auth/v1/verify` no longer redeems a guessable code without the address it was sent
+  to. The match was scoped by email only when one was supplied, so a bare six-digit code was
+  tried against every account at once; the per-address attempt cap also needed that email to
+  count against, so the five-try lockout never fired on that path. A short or all-numeric
+  token now requires its email. The long link token, which is all an emailed link can carry,
+  is unaffected — as is `GET /auth/v1/verify`, which after this can only redeem that token.
+
+### Fixed
+
+- `POST /auth/v1/verify` is rate limited (30 per 5 minutes by default). This also makes
+  `[auth.rate_limit] token_verifications` take effect — it mapped to a limit nothing read.
+
 ## [0.16.1]
 
 ### Fixed
