@@ -8,6 +8,15 @@ All notable changes to tinbase are documented here. The format follows
 
 ### Fixed
 
+- `POST /auth/v1/resend` sends the confirmation for the `type` it was given, instead of aliasing
+  `/magiclink`. The alias sent a different email: a login link measured by `recovery_sent_at`,
+  and - because the magic-link flow creates an account for an address it has never seen - a
+  resend for a stranger's address signed them up and mailed them a way in. It now takes GoTrue's
+  `type`, answers 200 with an empty body both for an unknown address and for one already
+  confirmed (identical from outside, so the response cannot report who has an account), creates
+  nothing, and is paced by `confirmation_sent_at`. `sms` and `phone_change` are refused as phone
+  auth is unsupported, and `email_change` until that flow exists.
+
 - `max_frequency` is now measured the way GoTrue measures it: against the timestamp the flow
   last wrote on the user row, rather than one window shared by every flow that can mail an
   address. The mapping is GoTrue's, quirks included - a signup confirmation is measured by
