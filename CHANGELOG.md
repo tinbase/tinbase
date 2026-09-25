@@ -6,6 +6,14 @@ All notable changes to tinbase are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The parity harness covers email. `parity/scenarios.ts` had no email scenarios at all, so the
+  part of the surface most recently changed was also the part not being measured against a real
+  Supabase. Six added, comparing what the API says rather than what arrives in an inbox - the
+  mail itself is not comparable, since tinbase captures it and `supabase start` puts it in
+  Inbucket. Auth goes from 3 scenarios to 9.
+
 ### Security
 
 - Changing the address on an account now has to be confirmed. `updateUser({ email })` wrote
