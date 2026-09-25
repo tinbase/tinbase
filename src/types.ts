@@ -188,7 +188,7 @@ export const DEFAULT_JWT_SECRET = 'super-secret-jwt-token-with-at-least-32-chara
  * package.json` in test/version.test.ts now fails the moment the two diverge, so
  * a release cannot quietly ship the wrong number again.
  */
-export const TINBASE_VERSION = '0.17.0'
+export const TINBASE_VERSION = '0.18.0'
 
 /** Per-request execution context derived from apikey/Authorization headers. */
 export interface RequestContext {
