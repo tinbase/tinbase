@@ -357,8 +357,8 @@ export class AuthHandler {
       if (path === 'logout' && method === 'POST') return await this.logout(req)
       if (path === 'otp' && method === 'POST') return this.limit('otp', req) ?? (await this.sendOtp(req, url))
       if (path === 'recover' && method === 'POST') return this.limit('recover', req) ?? (await this.sendRecovery(req, url))
-      if (['magiclink', 'resend'].includes(path) && method === 'POST')
-        return this.limit('otp', req) ?? (await this.sendOtp(req, url))
+      if (path === 'magiclink' && method === 'POST') return this.limit('otp', req) ?? (await this.sendOtp(req, url))
+      if (path === 'resend' && method === 'POST') return this.limit('otp', req) ?? (await this.resend(req, url))
       if (path === 'verify' && method === 'POST') return this.limit('verify', req) ?? (await this.verifyToken(req))
       // Deliberately unlimited, unlike the POST above: a link carries no email,
       // so after the scoping guard in redeem() this path can only redeem the
@@ -817,6 +817,62 @@ export class AuthHandler {
     const tooSoon = await this.limitEmailFrequency(body.email, 'recovery_sent_at')
     if (tooSoon) return tooSoon
     return this.issueToken(body.email, 'otp', body.create_user !== false, {
+      redirectTo: url.searchParams.get('redirect_to'),
+      ...AuthHandler.pkceFrom(body),
+    })
+  }
+
+  /**
+   * POST /auth/v1/resend - send the confirmation for `type` again.
+   *
+   * This used to be an alias for /magiclink, which is a different email
+   * entirely: it mails a login link measured by `recovery_sent_at`, creates an
+   * account for an address it has never seen, and pays no attention to `type`.
+   * So a resend for an address with no account signed that person up and sent
+   * them a way in, and a resend for a signup was paced by the recovery window.
+   *
+   * GoTrue answers 200 with an empty body both for an address it does not know
+   * and for one already confirmed - the two look identical from outside, which
+   * is what stops the endpoint from reporting who has an account. No mail goes
+   * out in either case.
+   */
+  private async resend(req: Request, url: URL): Promise<Response> {
+    const body = (await req.json().catch(() => ({}))) as {
+      type?: string
+      email?: string
+      phone?: string
+      code_challenge?: string
+      code_challenge_method?: string
+    }
+    if (!body.type) return authError(400, 'validation_failed', 'Missing one of these arguments: type')
+    if (body.type === 'sms' || body.type === 'phone_change') {
+      return authError(400, 'validation_failed', `Resend with type "${body.type}" requires phone auth, which is not supported`)
+    }
+    if (body.type === 'email_change') {
+      // The email-change flow itself does not exist yet, so there is no
+      // pending address to confirm. Say that, rather than resending something
+      // else and calling it an email change.
+      return authError(400, 'validation_failed', 'Resend type "email_change" is not supported yet')
+    }
+    if (body.type !== 'signup') {
+      return authError(400, 'validation_failed', `Resend requires a valid type: ${body.type}`)
+    }
+    if (!body.email) return authError(400, 'validation_failed', 'email is required')
+
+    const normalized = body.email.toLowerCase().trim()
+    const res = await this.db.query(`select id, email_confirmed_at from auth.users where email = $1`, [normalized])
+    const user = res.rows[0] as { id: string; email_confirmed_at: Date | string | null } | undefined
+    // Nothing to confirm, either because there is no account or because it is
+    // already confirmed. Answered the same way, and without creating anything:
+    // a resend is a repeat of a mail the address has already been sent, never
+    // the thing that signs someone up.
+    if (!user || user.email_confirmed_at) return json(200, {})
+
+    const tooSoon = await this.limitEmailFrequency(normalized, 'confirmation_sent_at')
+    if (tooSoon) return tooSoon
+
+    return this.issueToken(normalized, 'otp', false, {
+      flavor: 'confirm',
       redirectTo: url.searchParams.get('redirect_to'),
       ...AuthHandler.pkceFrom(body),
     })
