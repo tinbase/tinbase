@@ -172,7 +172,11 @@ page has the same switches and fields; the auth token is never shown back. Embed
 
 Codes are 6 digits (`[auth.sms] otp_length`), expire after 60 s (`otp_expiry`), lock after five wrong
 guesses, and every send is paced per caller (`[auth.rate_limit] sms_sent`, default 30/hour) and per
-recipient (`max_frequency`). Twilio Verify, the `send_sms` hook and WhatsApp are not implemented.
+recipient (`max_frequency`). Supabase's test phone numbers work too: `[auth.sms.test_otp]` maps a
+number to a fixed code (`14152127777 = "123456"`: the full number with country code, no `+`); a listed
+number is never texted and its code always verifies, for store reviewers' demo accounts and QA on the
+live app. `TINBASE_SMS_TEST_OTP="<number>:<code>,…"` adds platform-wide ones. Twilio Verify, the
+`send_sms` hook and WhatsApp are not implemented.
 
 ### RLS works like real Supabase
 

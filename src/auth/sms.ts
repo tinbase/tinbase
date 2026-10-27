@@ -93,3 +93,35 @@ export class TwilioSmsSender implements SmsSender {
     return body.sid
   }
 }
+
+/** The code a test phone number accepts: digits only, 4 to 10 of them. */
+export const TEST_OTP_CODE = /^\d{4,10}$/
+
+/**
+ * Supabase's test phone numbers, `[auth.sms.test_otp]`: `<number> = "<code>"`.
+ * A listed number is never texted and always accepts its fixed code - for
+ * store reviewers' demo accounts and QA against the live app. Keys are kept as
+ * bare digits like `auth.users.phone`; an entry that is not a phone number or
+ * not a digit code is dropped rather than failing the whole map.
+ */
+export function normalizeTestOtp(raw: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(raw)) {
+    const phone = normalizePhone(k)
+    if (!phone || typeof v !== 'string') continue
+    const code = v.trim()
+    if (TEST_OTP_CODE.test(code)) out[phone] = code
+  }
+  return out
+}
+
+/** `TINBASE_SMS_TEST_OTP="4152127777:123456,+15005550006:0000"` - GoTrue's `GOTRUE_SMS_TEST_OTP` shape. */
+export function parseTestOtpEnv(value: string): Record<string, string> {
+  const raw: Record<string, unknown> = {}
+  for (const entry of value.split(',')) {
+    const i = entry.lastIndexOf(':')
+    if (i < 0) continue
+    raw[entry.slice(0, i).trim()] = entry.slice(i + 1).trim()
+  }
+  return normalizeTestOtp(raw)
+}

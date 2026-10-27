@@ -1,7 +1,7 @@
 import { ExternalLink, Globe, Inbox, KeyRound, Mail, Smartphone, UserRound } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { api, type AuthSettings } from '../../api'
-import { Badge, Input, Spinner, Switch, toast } from '../../components/ui'
+import { Badge, Button, Input, Spinner, Switch, toast } from '../../components/ui'
 import { apiUrl } from '../../lib/snippet'
 
 interface Config {
@@ -136,6 +136,18 @@ export function ProvidersSection() {
               </SettingRow>
             </div>
 
+            <h2 className="mb-2 mt-8 text-sm font-medium text-foreground">Test phone numbers</h2>
+            <div className="rounded-md border border-border bg-card">
+              <div className="border-b border-border p-4">
+                <p className="text-[13px] text-foreground">Numbers that are never texted</p>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground/80">
+                  A listed number always accepts its fixed code — for app-store reviewers and QA on the live app. Expiry, the five-try lock and the
+                  minimum interval still apply. The same as <code className="text-muted-foreground">[auth.sms.test_otp]</code> in config.toml.
+                </p>
+              </div>
+              <TestOtpEditor value={settings?.smsTestOtp ?? {}} disabled={!settings} onSave={(m) => void patch({ smsTestOtp: m })} />
+            </div>
+
             <h2 className="mb-2 mt-8 text-sm font-medium text-foreground">SMS provider</h2>
             {config.sms?.custom ? (
               <div className="flex items-center gap-3 rounded-md border border-border bg-card p-4">
@@ -243,6 +255,63 @@ export function ProvidersSection() {
 }
 
 /* ── pieces ── */
+
+/** The [auth.sms.test_otp] map: one row per number, an add form at the bottom. Each change saves the whole map. */
+function TestOtpEditor({ value, disabled, onSave }: { value: Record<string, string>; disabled?: boolean; onSave: (m: Record<string, string>) => void }) {
+  const [phone, setPhone] = useState('')
+  const [code, setCode] = useState('')
+  const entries = Object.entries(value)
+  const canAdd = !disabled && /^\+?[1-9][\d\s().-]{1,20}$/.test(phone.trim()) && /^\d{4,10}$/.test(code.trim())
+
+  function add() {
+    if (!canAdd) return
+    onSave({ ...value, [phone.trim()]: code.trim() })
+    setPhone('')
+    setCode('')
+  }
+
+  function remove(p: string) {
+    const next = { ...value }
+    delete next[p]
+    onSave(next)
+  }
+
+  return (
+    <div className="divide-y divide-border">
+      {entries.map(([p, c]) => (
+        <div key={p} className="flex items-center gap-4 p-4">
+          <code className="min-w-0 flex-1 text-[13px] text-foreground">+{p}</code>
+          <code className="text-[13px] text-muted-foreground">{c}</code>
+          <button
+            type="button"
+            className="text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+            disabled={disabled}
+            onClick={() => remove(p)}
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+      <div className="flex flex-wrap items-center gap-2 p-4">
+        <Input mono className="w-48" placeholder="+15005550006" autoComplete="off" value={phone} disabled={disabled} onChange={(e) => setPhone(e.target.value)} />
+        <Input
+          mono
+          className="w-28"
+          placeholder="123456"
+          autoComplete="off"
+          value={code}
+          disabled={disabled}
+          onChange={(e) => setCode(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && add()}
+        />
+        <Button variant="outline" disabled={!canAdd} onClick={add}>
+          Add
+        </Button>
+        {entries.length === 0 && <span className="text-[11px] text-muted-foreground/80">None yet. Codes are 4–10 digits.</span>}
+      </div>
+    </div>
+  )
+}
 
 function SettingRow({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
   return (

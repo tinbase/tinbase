@@ -152,6 +152,8 @@ export interface AuthSettings {
   /** [auth.sms.twilio]; authToken is never echoed back (always '' on read; see smsTwilioAuthTokenSet) */
   smsTwilio: { accountSid: string; authToken: string; messageServiceSid: string }
   smsTwilioAuthTokenSet?: boolean
+  /** [auth.sms.test_otp]: bare-digit number → the fixed code it accepts; never texted */
+  smsTestOtp: Record<string, string>
 }
 
 export const api = {
