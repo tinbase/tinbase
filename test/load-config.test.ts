@@ -391,6 +391,20 @@ sms_sent = 7
     expect(auth.rateLimits?.sms).toEqual({ limit: 7, windowMs: 60 * 60 * 1000 })
   })
 
+  it("reads [auth.sms.test_otp] as Supabase's test phone numbers, keyed by bare digits", () => {
+    const dir = project(`
+[auth.sms]
+enable_signup = true
+
+[auth.sms.test_otp]
+4152127777 = "123456"
+"+91 98765 43210" = "000000"
+notaphone = "123456"
+4152127778 = "abc"
+`)
+    expect(loadProjectConfig(dir).auth.settings.smsTestOtp).toEqual({ '4152127777': '123456', '919876543210': '000000' })
+  })
+
   it('leaves phone auth off and the provider absent when the sections are missing', () => {
     const dir = project(`\n[auth]\nsite_url = "http://localhost:3000"\n`)
     const auth = loadProjectConfig(dir).auth

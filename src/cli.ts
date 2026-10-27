@@ -7,6 +7,7 @@
  *   tinbase status    show applied migrations
  *   tinbase keys      print anon/service_role keys for the JWT secret
  */
+import { parseTestOtpEnv } from './auth/sms.js'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -463,6 +464,9 @@ SMS (env, filling any [auth.sms.twilio] field the project left empty):
   TINBASE_SMS_TWILIO_API_URL  a Twilio-compatible gateway instead of
                               api.twilio.com (a platform gateway that holds
                               the real credential and meters each tenant)
+  TINBASE_SMS_TEST_OTP        test phone numbers, "<number>:<code>,..."; never
+                              texted, the code always verifies (a project adds
+                              its own under [auth.sms.test_otp])
 
 Phone auth itself is switched on by [auth.sms] enable_signup = true. Without
 credentials the codes land in the dev inbox at /inbox and are never sent.
@@ -862,6 +866,14 @@ async function main(): Promise<void> {
       process.exit(1)
     }
   }
+  // Test phone numbers: the project's [auth.sms.test_otp], plus
+  // TINBASE_SMS_TEST_OTP ("<number>:<code>,…", GoTrue's GOTRUE_SMS_TEST_OTP)
+  // for numbers a platform reserves for every tenant. The project's entry wins
+  // on a clash.
+  const smsTestOtp = {
+    ...(process.env.TINBASE_SMS_TEST_OTP ? parseTestOtpEnv(process.env.TINBASE_SMS_TEST_OTP) : {}),
+    ...(cfg.auth.settings.smsTestOtp ?? {}),
+  }
   if (twilioCfg.enabled === true && (!smsTwilio.accountSid || !smsTwilio.authToken)) {
     console.error(
       'auth.sms.twilio: enabled, but account_sid / auth_token are empty and TINBASE_SMS_TWILIO_ACCOUNT_SID / ' +
@@ -950,7 +962,7 @@ async function main(): Promise<void> {
     jwtExpiry: cfg.auth.jwtExpiry,
     uriAllowList,
     authEnabled: cfg.auth.enabled,
-    authSettings: { ...cfg.auth.settings, smsTwilio },
+    authSettings: { ...cfg.auth.settings, smsTwilio, smsTestOtp },
     smsApiUrl,
     smsTemplate: cfg.auth.smsTemplate,
     authRateLimits: cfg.auth.rateLimits,

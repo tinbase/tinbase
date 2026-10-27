@@ -1490,13 +1490,23 @@ export class AuthHandler {
     tokenType: 'sms' | 'phone_change',
     column: SentAtColumn
   ): Promise<string | void> {
-    const code = randomOtp(this.settings.smsOtpLength)
+    // Supabase's test phone numbers ([auth.sms.test_otp]): a listed number
+    // takes its fixed code and is never texted - store reviewers' demo
+    // accounts, QA on the live app. Everything else (expiry, five tries,
+    // max_frequency, the per-caller limit) is as for a real code, which is how
+    // GoTrue treats them too.
+    const testCode = this.settings.smsTestOtp[phone]
+    const code = testCode ?? randomOtp(this.settings.smsOtpLength)
     await this.db.query(`delete from auth.one_time_tokens where phone = $1 and token_type = $2`, [phone, tokenType])
     await this.db.query(
       `insert into auth.one_time_tokens (user_id, phone, token_type, token, expires_at)
        values ($1, $2, $3, $4, now() + $5::interval)`,
       [user.id, phone, tokenType, code, `${this.settings.smsOtpExpirySeconds} seconds`]
     )
+    if (testCode !== undefined) {
+      await this.markEmailSent(user.id, column)
+      return undefined
+    }
     const body = renderSmsTemplate(this.config.smsTemplate || DEFAULT_SMS_TEMPLATE, code)
     let messageId: string | void
     try {
