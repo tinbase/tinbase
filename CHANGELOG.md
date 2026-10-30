@@ -6,6 +6,13 @@ All notable changes to tinbase are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.22.2]
+
+### Fixed
+
+- Storage: a signed upload URL works without an apikey, as on hosted Supabase, and writes with
+  the rights of the key that created it, so a service-role URL is no longer turned away by RLS (#159).
+
 ## [0.22.1]
 
 ### Fixed
