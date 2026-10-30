@@ -141,6 +141,29 @@ describe('storage', () => {
     expect(check.error).not.toBeNull()
   })
 
+  it('redeems a service_role signed upload URL with no apikey, as hosted Supabase does', async () => {
+    // Server code mints the URL with the service key and hands it to a script or client that has
+    // no key at all; the token alone authorises the write, with the minter's rights (so storage
+    // RLS, which has no anon insert policy here, does not block it).
+    const signed = await env.admin.storage.from('docs').createSignedUploadUrl('handoff/bundle.zip')
+    expect(signed.error).toBeNull()
+    const res = await env.backend.fetch(
+      new Request(`http://x/storage/v1/object/upload/sign/docs/handoff/bundle.zip?token=${signed.data!.token}`, {
+        method: 'PUT',
+        body: 'bundle bytes',
+      })
+    )
+    expect(res.status).toBe(200)
+    const back = await env.admin.storage.from('docs').download('handoff/bundle.zip')
+    expect(await back.data!.text()).toBe('bundle bytes')
+
+    // Minting still needs a key: POST on the same path is not exempt.
+    const mint = await env.backend.fetch(
+      new Request('http://x/storage/v1/object/upload/sign/docs/handoff/other.zip', { method: 'POST' })
+    )
+    expect(mint.status).toBe(401)
+  })
+
   it('moves and copies objects', async () => {
     await env.supabase.storage.from('docs').upload('mv/src.txt', new Blob(['move me']))
     const mv = await env.supabase.storage.from('docs').move('mv/src.txt', 'mv/dst.txt')
