@@ -222,6 +222,15 @@ curl http://127.0.0.1:54321/admin/v1/storage -H "apikey: $SERVICE_ROLE_KEY"
 `used_bytes` is the sum of `metadata.size` over `storage.objects`; `last_refused_at` is when a
 write was last refused for the quota.
 
+Hosts that meter projects can poll this together with `GET /admin/v1/stats`, which reports the
+database size as `dbSizeBytes` (a number, next to the human-readable `dbSize`). Both are plain
+reads with no side effects, so polling them is cheap:
+
+```bash
+curl http://127.0.0.1:54321/admin/v1/stats -H "apikey: $SERVICE_ROLE_KEY"
+# {"users":3,"buckets":1,"objects":12,"migrations":4,"tables":6,"dbSize":"24 MB","dbSizeBytes":25165824,"version":"PostgreSQL 17.4"}
+```
+
 ## Studio
 
 tinbase ships with a built-in dashboard at [`/_/`](http://127.0.0.1:54321/_/) - the same shape as Supabase Studio, with real URL routing (deep links, back/forward), a `Ctrl+K` command palette, light/dark theming, and drag-resizable panels:
