@@ -560,7 +560,11 @@ export class AdminApi {
     return json(200, { triggers: res.rows })
   }
 
-  /** Summary counts (users, buckets, objects, migrations, tables) plus database size and version for the studio dashboard. */
+  /**
+   * Summary counts (users, buckets, objects, migrations, tables) plus database size and version for
+   * the studio dashboard. Hosts also poll this to meter a project's database size (`dbSizeBytes`),
+   * so it stays a cheap read: catalog counts and pg_database_size, no writes.
+   */
   private async stats(): Promise<Response> {
     const one = async (sql: string) => (await this.db.query<{ n: number }>(sql)).rows[0]?.n ?? 0
     const users = await one(`select count(*)::int as n from auth.users`)
@@ -570,17 +574,22 @@ export class AdminApi {
     const tables = await one(
       `select count(*)::int as n from information_schema.tables where table_schema='public' and table_type='BASE TABLE'`
     )
-    const size = await this.db.query<{ s: string; v: string }>(
-      `select pg_size_pretty(pg_database_size(current_database())) as s, version() as v`
+    const size = await this.db.query<{ b: string | number | null; s: string; v: string }>(
+      `select pg_database_size(current_database())::text as b,
+              pg_size_pretty(pg_database_size(current_database())) as s, version() as v`
     )
+    const row = size.rows[0]
+    const bytes = row?.b == null ? NaN : Number(row.b)
     return json(200, {
       users,
       buckets,
       objects,
       migrations,
       tables,
-      dbSize: size.rows[0]?.s ?? '?',
-      version: (size.rows[0]?.v ?? '').split(' on ')[0],
+      dbSize: row?.s ?? '?',
+      // database size in bytes, for metering; null when the engine cannot report it
+      dbSizeBytes: Number.isFinite(bytes) ? bytes : null,
+      version: (row?.v ?? '').split(' on ')[0],
     })
   }
 }
