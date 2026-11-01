@@ -124,6 +124,8 @@ export interface Stats {
   migrations: number
   tables: number
   dbSize: string
+  /** database size in bytes (null when the engine cannot report it) */
+  dbSizeBytes: number | null
   version: string
 }
 
