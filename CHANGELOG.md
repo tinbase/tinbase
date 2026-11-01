@@ -6,6 +6,13 @@ All notable changes to tinbase are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.22.3]
+
+### Added
+
+- Admin API: `GET /admin/v1/stats` returns `dbSizeBytes`, the database size in bytes (`null` when
+  the engine cannot report it), next to the human-readable `dbSize`. Used for per-team metering (#172).
+
 ## [0.22.2]
 
 ### Fixed
