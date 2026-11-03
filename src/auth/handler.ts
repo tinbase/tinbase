@@ -6,7 +6,7 @@ import type { Database } from '../db/database.js'
 import { randomToken, signJwt, verifyJwt, type JwtClaims } from '../jwt.js'
 import { TINBASE_VERSION, type Mailer, type RequestContext, type SmsSender } from '../types.js'
 import { OAuthService, type OAuthProviderConfig } from './oauth.js'
-import { hashPassword, verifyPassword } from './password.js'
+import { asBcrypt2a, hashPassword, isBcryptHash, verifyPassword } from './password.js'
 import { qrSvgDataUri } from './qr.js'
 import { DEFAULT_AUTH_SETTINGS, type AuthSettings } from './settings.js'
 import { resolveRedirect } from './redirect.js'
@@ -520,6 +520,33 @@ export class AuthHandler {
     return json(200, await this.sessionFor(newUser))
   }
 
+  /**
+   * Check a sign-in password against the stored hash. tinbase's own hashes are
+   * PBKDF2; a bcrypt hash (from a hosted-Supabase dump) is checked with
+   * pgcrypto's `crypt()` and, on a match, replaced with a PBKDF2 hash so the
+   * user moves over on their first sign-in. Engines without pgcrypto (pgmem)
+   * reject bcrypt hashes rather than throw.
+   */
+  private async checkPassword(user: UserRow, password: string): Promise<boolean> {
+    const stored = user.encrypted_password ?? ''
+    if (!isBcryptHash(stored)) return verifyPassword(password, stored)
+    const hash = asBcrypt2a(stored)
+    let ok = false
+    try {
+      const r = await this.db.query<{ ok: boolean }>(`select extensions.crypt($1, $2) = $2 as ok`, [password, hash])
+      ok = r.rows[0]?.ok === true
+    } catch {
+      return false
+    }
+    if (ok) {
+      await this.db.query(`update auth.users set encrypted_password = $1, updated_at = now() where id = $2`, [
+        await hashPassword(password),
+        user.id,
+      ])
+    }
+    return ok
+  }
+
   private async token(req: Request, url: URL): Promise<Response> {
     const grantType = url.searchParams.get('grant_type')
     const body = (await req.json().catch(() => ({}))) as Record<string, string>
@@ -535,7 +562,7 @@ export class AuthHandler {
         ? await this.db.query(`select * from auth.users where phone = $1`, [phone ?? ''])
         : await this.db.query(`select * from auth.users where email = $1`, [email])
       const user = res.rows[0] as UserRow | undefined
-      if (!user || !user.encrypted_password || !(await verifyPassword(body.password ?? '', user.encrypted_password))) {
+      if (!user || !user.encrypted_password || !(await this.checkPassword(user, body.password ?? ''))) {
         await this.audit('login_failed', { actorEmail: byPhone ? phone : email, traits: { grant_type: 'password' } })
         return authError(400, 'invalid_credentials', 'Invalid login credentials')
       }
