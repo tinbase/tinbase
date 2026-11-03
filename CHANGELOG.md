@@ -6,6 +6,13 @@ All notable changes to tinbase are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Auth: users restored from a hosted-Supabase dump sign in with their existing passwords. A
+  bcrypt hash (GoTrue's `$2a$`, also `$2b$`/`$2y$`) in `auth.users.encrypted_password` is checked
+  with pgcrypto's `crypt()` and replaced with tinbase's PBKDF2 hash on the first successful
+  sign-in. Engines without pgcrypto (pgmem) reject such hashes as before.
+
 ## [0.22.3]
 
 ### Added
