@@ -6,6 +6,8 @@ All notable changes to tinbase are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.22.4]
+
 ### Added
 
 - Auth: users restored from a hosted-Supabase dump sign in with their existing passwords. A
