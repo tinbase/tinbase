@@ -1,6 +1,6 @@
 {
   "name": "tinbase",
-  "version": "0.22.4",
+  "version": "0.22.5",
   "description": "A Docker-free, Supabase-compatible local backend — real Postgres (embedded native or PGlite/WASM), wire-compatible with supabase-js.",
   "type": "module",
   "author": "Sanket Sahu",

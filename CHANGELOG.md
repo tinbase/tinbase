@@ -6,15 +6,23 @@ All notable changes to tinbase are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.22.5]
+
 ### Added
 
-- Supabase's test phone numbers: `[auth.sms.test_otp]` (`<number> = "<code>"`) in config.toml,
+- Auth: Supabase's test phone numbers (#166): `[auth.sms.test_otp]` (`<number> = "<code>"`) in config.toml,
   `TINBASE_SMS_TEST_OTP="<number>:<code>,…"` in the environment (GoTrue's `GOTRUE_SMS_TEST_OTP`),
   and a "Test phone numbers" list on Studio's Sign In / Providers page (`smsTestOtp` on the
   auth-config admin API). A listed number is never texted and always accepts its fixed code, for
   store reviewers' demo accounts and QA on the live app; expiry, the five-try lock and
   `max_frequency` still apply, as in GoTrue. config.toml keys may now be quoted
   (`"+91 98765 43210" = "000000"`).
+
+### Changed
+
+- Auth: the default `[auth.sms] template` is now `Your code is {{ .Code }}. Do not share this code.`,
+  matching the sample registered with US carriers for RapidNative's A2P 10DLC number (#176). A
+  project with its own `template` is unaffected.
 
 ## [0.22.4]
 
