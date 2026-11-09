@@ -157,7 +157,7 @@ work as they do against Supabase. Phone auth is off until the project turns it o
 enable_signup = true          # phone sign-ins and signups
 enable_confirmations = false  # true: a phone signup must verify its code before it can sign in
 max_frequency = "60s"         # shortest gap between texts to one number
-template = "Your code is {{ .Code }}"
+template = "Your code is {{ .Code }}. Do not share this code."
 
 [auth.sms.twilio]
 enabled = true
