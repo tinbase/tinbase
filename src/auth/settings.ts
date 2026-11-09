@@ -5,6 +5,7 @@
  * to the auth.config kv table so restarts keep the operator's choices.
  */
 import type { Database } from '../db/database.js'
+import { normalizePhone, normalizeTestOtp } from './sms.js'
 
 /**
  * Runtime-mutable auth configuration. One shared instance is read by the auth
@@ -85,6 +86,13 @@ export interface AuthSettings {
    * is the baseline. `authToken` is a secret: the admin API never echoes it.
    */
   smsTwilio: { accountSid: string; authToken: string; messageServiceSid: string }
+  /**
+   * Supabase's test phone numbers (`[auth.sms.test_otp]`): bare-digit number
+   * to the fixed code it accepts. A listed number is never texted. For store
+   * reviewers' demo accounts and QA on the live app; expiry, the five-try
+   * lock and `max_frequency` still apply, as in GoTrue.
+   */
+  smsTestOtp: Record<string, string>
 }
 
 /** Built-in defaults, matching `supabase start`'s permissive local posture (autoconfirm on, anonymous users on). */
@@ -107,6 +115,7 @@ export const DEFAULT_AUTH_SETTINGS: AuthSettings = {
   smsOtpExpirySeconds: 60,
   maxSmsFrequencySeconds: 60,
   smsTwilio: { accountSid: '', authToken: '', messageServiceSid: '' },
+  smsTestOtp: {},
 }
 
 /** Clamp/typecheck a stored or patched settings object into a valid one. */
@@ -166,6 +175,9 @@ function sanitize(raw: Record<string, unknown>): AuthSettings {
       authToken: typeof t.authToken === 'string' ? t.authToken.trim() : '',
       messageServiceSid: typeof t.messageServiceSid === 'string' ? t.messageServiceSid.trim() : '',
     }
+  }
+  if (raw.smsTestOtp && typeof raw.smsTestOtp === 'object' && !Array.isArray(raw.smsTestOtp)) {
+    s.smsTestOtp = normalizeTestOtp(raw.smsTestOtp as Record<string, unknown>)
   }
   return s
 }
@@ -269,7 +281,7 @@ export function applyAuthSettingsPatch(target: AuthSettings, patch: Record<strin
     'smsOtpExpirySeconds',
     'maxSmsFrequencySeconds',
   ]
-  const KEYS = [...BOOL_KEYS, ...NUMBER_KEYS, 'disabledProviders', 'smsTwilio']
+  const KEYS = [...BOOL_KEYS, ...NUMBER_KEYS, 'disabledProviders', 'smsTwilio', 'smsTestOtp']
   for (const k of Object.keys(patch)) {
     if (!KEYS.includes(k)) return `unknown setting: ${k}`
   }
@@ -309,6 +321,14 @@ export function applyAuthSettingsPatch(target: AuthSettings, patch: Record<strin
     for (const k of Object.keys(t)) {
       if (!['accountSid', 'authToken', 'messageServiceSid'].includes(k)) return `unknown smsTwilio field: ${k}`
       if (typeof (t as Record<string, unknown>)[k] !== 'string') return `smsTwilio.${k} must be a string`
+    }
+  }
+  if ('smsTestOtp' in patch) {
+    const m = patch.smsTestOtp
+    if (!m || typeof m !== 'object' || Array.isArray(m)) return 'smsTestOtp must be an object of phone number to code'
+    for (const [k, v] of Object.entries(m as Record<string, unknown>)) {
+      if (normalizePhone(k) === null) return `smsTestOtp: ${k} is not a phone number (E.164 required)`
+      if (typeof v !== 'string' || !/^\d{4,10}$/.test(v.trim())) return `smsTestOtp: the code for ${k} must be 4 to 10 digits`
     }
   }
   Object.assign(target, sanitize(mergeSettings(target, patch)))

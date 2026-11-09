@@ -12,6 +12,7 @@ import type { AuthSettings } from '../auth/settings.js'
 import type { OAuthProviderConfig } from '../auth/oauth.js'
 import type { RateLimitRule } from '../auth/rate-limit.js'
 import type { BucketSeed } from '../types.js'
+import { normalizeTestOtp } from '../auth/sms.js'
 import {
   loadConfigToml,
   tableAt,
@@ -306,6 +307,13 @@ function readAuthSettings(root: ConfigTable): Partial<AuthSettings> {
   if (smsOtpExpiry !== undefined) out.smsOtpExpirySeconds = smsOtpExpiry
   const smsMaxFrequency = getDurationSeconds(sms, 'max_frequency') ?? getInt(sms, 'max_frequency')
   if (smsMaxFrequency !== undefined) out.maxSmsFrequencySeconds = smsMaxFrequency
+  // [auth.sms.test_otp]: `<number> = "<code>"`, Supabase's test phone numbers.
+  const testOtp = tableAt(root, 'auth.sms.test_otp')
+  if (testOtp) {
+    const raw: Record<string, unknown> = {}
+    for (const [k, v] of testOtp.values) raw[k] = v
+    out.smsTestOtp = normalizeTestOtp(raw)
+  }
 
   const maxFactors = getInt(mfa, 'max_enrolled_factors')
   if (maxFactors !== undefined) out.maxEnrolledFactors = maxFactors

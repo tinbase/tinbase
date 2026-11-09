@@ -298,6 +298,80 @@ describe('max_frequency for SMS', () => {
   })
 })
 
+describe('test phone numbers ([auth.sms.test_otp])', () => {
+  it('never texts a listed number, and its fixed code signs in', async () => {
+    const { supabase, outbox } = await boot({ smsTestOtp: { '+1 (500) 555-0070': '424242' } })
+    const r = await supabase.auth.signInWithOtp({ phone: '+15005550070' })
+    expect(r.error).toBeNull()
+    expect(r.data.messageId).toBeFalsy()
+    expect(outbox).toHaveLength(0)
+    const wrong = await supabase.auth.verifyOtp({ phone: '+15005550070', token: '000000', type: 'sms' })
+    expect(wrong.error).not.toBeNull()
+    const ok = await supabase.auth.verifyOtp({ phone: '+15005550070', token: '424242', type: 'sms' })
+    expect(ok.error).toBeNull()
+    expect(ok.data.user?.phone).toBe('15005550070')
+    expect(ok.data.user?.phone_confirmed_at).toBeTruthy()
+    // every request mints the same code again; other numbers still get a random one by text
+    expect((await supabase.auth.signInWithOtp({ phone: '+15005550070' })).error).toBeNull()
+    expect((await supabase.auth.verifyOtp({ phone: '+15005550070', token: '424242', type: 'sms' })).error).toBeNull()
+    expect((await supabase.auth.signInWithOtp({ phone: '+15005550071' })).error).toBeNull()
+    expect(outbox).toHaveLength(1)
+    expect(outbox[0].to).toBe('+15005550071')
+    expect(outbox[0].body).not.toContain('424242')
+  })
+
+  it('covers phone signups and phone changes too', async () => {
+    const { supabase, outbox } = await boot({ smsAutoconfirm: false, smsTestOtp: { '15005550072': '111111', '15005550073': '222222' } })
+    const up = await supabase.auth.signUp({ phone: '+15005550072', password: 'password123' })
+    expect(up.error).toBeNull()
+    expect(up.data.session).toBeNull()
+    const confirmed = await supabase.auth.verifyOtp({ phone: '+15005550072', token: '111111', type: 'sms' })
+    expect(confirmed.error).toBeNull()
+    expect(confirmed.data.session).not.toBeNull()
+    // the client is signed in now; change to another listed number
+    const upd = await supabase.auth.updateUser({ phone: '+15005550073' })
+    expect(upd.error).toBeNull()
+    expect(upd.data.user.new_phone).toBe('15005550073')
+    const moved = await supabase.auth.verifyOtp({ phone: '+15005550073', token: '222222', type: 'phone_change' })
+    expect(moved.error).toBeNull()
+    expect(moved.data.user?.phone).toBe('15005550073')
+    expect(outbox).toHaveLength(0)
+    await supabase.auth.signOut()
+  })
+
+  it('still paces a listed number by max_frequency, as GoTrue does', async () => {
+    const { supabase } = await boot({ maxSmsFrequencySeconds: 60, smsTestOtp: { '15005550074': '111111' } })
+    expect((await supabase.auth.signInWithOtp({ phone: '+15005550074' })).error).toBeNull()
+    const second = await supabase.auth.signInWithOtp({ phone: '+15005550074' })
+    expect(second.error?.code).toBe('over_sms_send_rate_limit')
+  })
+
+  it('is a runtime setting: the admin API takes the map, echoes it, and refuses a bad entry', async () => {
+    const { outbox } = await boot()
+    const headers = { 'content-type': 'application/json', apikey: backend!.serviceRoleKey, authorization: `Bearer ${backend!.serviceRoleKey}` }
+    const patch = (body: unknown) =>
+      backend!.fetch(new Request('http://localhost:54321/admin/v1/auth-config', { method: 'PATCH', headers, body: JSON.stringify(body) }))
+    const ok = await patch({ smsTestOtp: { '+91 98765 43210': '000000' } })
+    expect(ok.status).toBe(200)
+    expect(((await ok.json()) as { settings: { smsTestOtp: Record<string, string> } }).settings.smsTestOtp).toEqual({ '919876543210': '000000' })
+    // live at once: the listed number is not texted
+    const supabase = createClient('http://localhost:54321', backend!.anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { fetch: (i, init) => backend!.fetch(new Request(i, init)) },
+    })
+    expect((await supabase.auth.signInWithOtp({ phone: '+919876543210' })).error).toBeNull()
+    expect((await supabase.auth.verifyOtp({ phone: '+919876543210', token: '000000', type: 'sms' })).error).toBeNull()
+    expect(outbox).toHaveLength(0)
+    const badPhone = await patch({ smsTestOtp: { 'not-a-number': '123456' } })
+    expect(badPhone.status).toBe(400)
+    const badCode = await patch({ smsTestOtp: { '15005550075': 'abc' } })
+    expect(badCode.status).toBe(400)
+    const cleared = await patch({ smsTestOtp: {} })
+    expect(cleared.status).toBe(200)
+    expect(((await cleared.json()) as { settings: { smsTestOtp: Record<string, string> } }).settings.smsTestOtp).toEqual({})
+  })
+})
+
 describe('without an SMS provider', () => {
   it('captures the text in the dev inbox, marked as SMS', async () => {
     const { supabase } = await boot({}, { sender: false })

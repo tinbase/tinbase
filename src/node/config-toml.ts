@@ -54,9 +54,12 @@ export function parseConfigToml(text: string, env: NodeJS.ProcessEnv = process.e
       current = descend(root, header[1].split('.').map((s) => s.trim()))
       continue
     }
-    const kv = line.match(/^([A-Za-z0-9_]+)\s*=\s*(.+)$/)
+    // A bare key, or a quoted one for what TOML cannot spell bare, such as a
+    // phone number with its `+` in [auth.sms.test_otp].
+    const kv = line.match(/^(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))\s*=\s*(.+)$/)
     if (!kv) continue
-    let raw = kv[2].trim()
+    const key = kv[1] ?? kv[2] ?? kv[3]
+    let raw = kv[4].trim()
     // An array may be spread over several lines, which is how Supabase itself
     // writes a long one. Join them before parsing so the value below sees a
     // single `["a", "b"]` however the file was formatted. Read only as far as
@@ -77,7 +80,7 @@ export function parseConfigToml(text: string, env: NodeJS.ProcessEnv = process.e
       }
     }
     const value = parseValue(raw, env)
-    if (value !== undefined) current.values.set(kv[1], value)
+    if (value !== undefined) current.values.set(key, value)
   }
   return root
 }

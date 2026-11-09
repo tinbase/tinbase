@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createBackend, TwilioSmsSender, normalizePhone, type TinbaseBackend } from '../src/index.js'
+import { createBackend, TwilioSmsSender, normalizePhone, parseTestOtpEnv, type TinbaseBackend } from '../src/index.js'
 import { Database } from '../src/db/database.js'
 import { BOOTSTRAP_SQL } from '../src/db/bootstrap.js'
 
@@ -168,6 +168,16 @@ describe('normalizePhone', () => {
     expect(normalizePhone('+0123')).toBeNull()
     expect(normalizePhone('555-CALL-NOW')).toBeNull()
     expect(normalizePhone('+1234567890123456')).toBeNull()
+  })
+})
+
+describe('parseTestOtpEnv', () => {
+  it("reads GoTrue's \"<number>:<code>,…\" form and drops what is not a number or a digit code", () => {
+    expect(parseTestOtpEnv('4152127777:123456, +1 (500) 555-0006:0000, junk, 123:abc, :1234')).toEqual({
+      '4152127777': '123456',
+      '15005550006': '0000',
+    })
+    expect(parseTestOtpEnv('')).toEqual({})
   })
 })
 
