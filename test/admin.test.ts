@@ -89,9 +89,12 @@ describe('admin', () => {
 
   it('returns stats', async () => {
     const res = await req('/admin/v1/stats', backend.serviceRoleKey)
-    const body = (await res.json()) as { migrations: number; dbSize: string }
+    const body = (await res.json()) as { migrations: number; dbSize: string; dbSizeBytes: number | null }
     expect(body.migrations).toBeGreaterThanOrEqual(1)
     expect(body.dbSize).toBeTruthy()
+    expect(typeof body.dbSizeBytes).toBe('number')
+    expect(body.dbSizeBytes).toBeGreaterThan(0)
+    expect(Number.isInteger(body.dbSizeBytes)).toBe(true)
   })
 
   it('adds, lists (with digest), and deletes edge-function secrets live', async () => {

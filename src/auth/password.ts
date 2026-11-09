@@ -50,3 +50,22 @@ export async function verifyPassword(password: string, stored: string): Promise<
   for (let i = 0; i < actual.length; i++) diff |= actual.charCodeAt(i) ^ expected.charCodeAt(i)
   return diff === 0
 }
+
+/**
+ * A bcrypt hash (`$2a$`/`$2b$`/`$2y$`, cost, 53 chars of salt + hash), which is
+ * what hosted Supabase (GoTrue) stores in `auth.users.encrypted_password`. Users
+ * restored from a Supabase dump arrive with these.
+ */
+export function isBcryptHash(stored: string): boolean {
+  return /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(stored)
+}
+
+/**
+ * The same hash spelled with the `$2a$` prefix. `$2a$`, `$2b$` and `$2y$` hash
+ * identically for any real password (they differ only in how very long
+ * passwords and an old PHP bug are handled), and `$2a$` is the spelling
+ * pgcrypto's `crypt()` accepts everywhere.
+ */
+export function asBcrypt2a(stored: string): string {
+  return '$2a$' + stored.slice(4)
+}

@@ -16,6 +16,68 @@ All notable changes to tinbase are documented here. The format follows
   `max_frequency` still apply, as in GoTrue. config.toml keys may now be quoted
   (`"+91 98765 43210" = "000000"`).
 
+## [0.22.4]
+
+### Added
+
+- Auth: users restored from a hosted-Supabase dump sign in with their existing passwords. A
+  bcrypt hash (GoTrue's `$2a$`, also `$2b$`/`$2y$`) in `auth.users.encrypted_password` is checked
+  with pgcrypto's `crypt()` and replaced with tinbase's PBKDF2 hash on the first successful
+  sign-in. Engines without pgcrypto (pgmem) reject such hashes as before.
+
+## [0.22.3]
+
+### Added
+
+- Admin API: `GET /admin/v1/stats` returns `dbSizeBytes`, the database size in bytes (`null` when
+  the engine cannot report it), next to the human-readable `dbSize`. Used for per-team metering (#172).
+
+## [0.22.2]
+
+### Fixed
+
+- Storage: a signed upload URL works without an apikey, as on hosted Supabase, and writes with
+  the rights of the key that created it, so a service-role URL is no longer turned away by RLS (#159).
+
+## [0.22.1]
+
+### Fixed
+
+- Startup no longer says `postgres is starting up (crash recovery)` on every start. Postgres
+  answers "starting up" for the first moments of any start, so tinbase now prints `postgres is
+  starting up; waiting…`, and `postgres is recovering from an unclean shutdown; waiting…` only once
+  Postgres's own log says it is recovering.
+
+## [0.22.0]
+
+### Added
+
+- `tinbase db export -o <file>` writes a project's database, roles and stored files to one
+  archive: `pg_dump` and `pg_dumpall --globals-only --no-role-passwords`, plus the storage
+  directory and a manifest. It works against a running server (`pg_dump` reads one consistent
+  snapshot, so nothing stops) or starts Postgres briefly when none is running. A seed-only project
+  exports to about 11 KB, where a copy of its data directory is tens of MB, and the archive still
+  loads after a Postgres major upgrade. Native engine only.
+- `tinbase db import <file> [--force]` creates the database from such an archive. It loads into a
+  new cluster beside the data directory and swaps it in only once everything loaded, so a bad
+  archive or a failed load leaves the existing database and storage as they were.
+- `tinbase start` restores an export left at `<dir>/.tinbase/restore.tar.gz` before it opens the
+  database, then removes it. A host whose server runs as a container's main process restores
+  that way: wipe the data directory, leave the archive, start. An archive that does not load
+  stops startup (and stays for the next attempt) rather than letting a fresh database serve in
+  place of the restored one.
+- The export manifest carries `contentHash`, a sha256 of the roles, the dump and every stored
+  file. Two exports of an unchanged database hash the same (pg_dump's per-run `\restrict` key is
+  left out), so a host can skip keeping an archive identical to the last one.
+- Seed snapshots, and `tinbase db pristine`: whether a database still holds only what its
+  migrations and seed put there. The snapshot is taken when a database is created and moves
+  forward whenever migrations or the seed apply to a database that still matches it; once anything
+  else writes (a row in an app table, a new account, an upload, a bucket, a cron job, a vault
+  secret, a schema change outside migrations) it is marked diverged for good. Sign-ins, sessions
+  and audit rows do not count. A host can drop a pristine database instead of keeping a backup
+  of it. Databases created before this release report `diverged` (`existed before tinbase
+  recorded seed snapshots`), since nothing says what in them came from the files.
+
 ## [0.21.2]
 
 ### Fixed

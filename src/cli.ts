@@ -9,11 +9,13 @@
  */
 import { parseTestOtpEnv } from './auth/sms.js'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { createBackend, generateTypes, createPgmemEngine, inspectDb } from './index.js'
 import { computeDbDiff, pullSchema, shadowNativeDataDir } from './node/db-diff.js'
 import { attachNativeEngine, createNativeEngine, readRunningPostmaster } from './node/native/engine.js'
+import { exportProject, importProject, RESTORE_FILE } from './node/native/dump.js'
+import { checkPristine } from './db/pristine.js'
 import type { DbEngine } from './db/engine.js'
 import { readServerLock, removeServerLock, writeServerLock, type ServerLock } from './node/server-lock.js'
 import { FsStorageDriver } from './node/fs-driver.js'
@@ -68,6 +70,10 @@ interface CliOptions {
   databaseUrl?: string
   /** output migration name for `db diff -f`, if given */
   diffFile?: string
+  /** archive path for `db export -o` */
+  outFile?: string
+  /** `db import --force`: replace an existing (stopped) database */
+  force: boolean
 }
 
 /**
@@ -91,6 +97,7 @@ function parseArgs(argv: string[]): CliOptions {
     memory: false,
     engine: (process.env.TINBASE_ENGINE as 'wasm' | 'native' | 'pgmem') ?? (IS_BINARY || NATIVE_SUPPORTED ? 'native' : 'wasm'),
     databaseUrl: process.env.TINBASE_DATABASE_URL || process.env.DATABASE_URL || undefined,
+    force: false,
   }
   for (let i = 0; i < args.length; i++) {
     const a = args[i]
@@ -104,6 +111,8 @@ function parseArgs(argv: string[]): CliOptions {
     else if (a === '--database-url') opts.databaseUrl = next()
     else if (a === '--memory') opts.memory = true
     else if (a === '-f' || a === '--file') opts.diffFile = next()
+    else if (a === '-o' || a === '--out') opts.outFile = resolve(next())
+    else if (a === '--force') opts.force = true
     else if (a === '--engine') {
       const v = next()
       if (v !== 'wasm' && v !== 'native' && v !== 'pgmem') {
@@ -427,6 +436,11 @@ Commands:
   db reset   wipe the database + storage and re-run migrations and seed
   db diff    print DDL for schema changes not yet in migrations (-f <name> to write a migration)
   db pull    write the current schema delta as a migration and mark it applied ([name] optional)
+  db export  write the database, roles and stored files to an archive (-o <file>, native engine)
+  db import  create the database from an archive (<file>; --force replaces a stopped one)
+  db pristine
+             report whether the database still holds only what migrations and seed
+             put there (exit 0 when it does, 3 when it does not)
   inspect    per-table row counts and on-disk size
 
 Options:
@@ -581,10 +595,66 @@ async function main(): Promise<void> {
     return
   }
 
+  if (opts.command === 'db' && (opts.positionals[0] === 'export' || opts.positionals[0] === 'import')) {
+    const sub = opts.positionals[0]
+    if (opts.engine !== 'native') {
+      console.error(`db ${sub} needs the native engine (--engine native)`)
+      process.exit(1)
+    }
+    const dataDir = resolveDataDir(opts)!
+    const log = (m: string) => console.error(`  ${m}`)
+    const fail = (e: unknown): never => {
+      console.error(`db ${sub} failed: ${(e as Error)?.message ?? e}`)
+      process.exit(1)
+    }
+    if (sub === 'export') {
+      // `tinbase db export -o <file>` - works against a running server; pg_dump
+      // reads one consistent snapshot, so nothing stops
+      const outFile = opts.outFile ?? resolve('tinbase-export.tar.gz')
+      const { bytes, manifest } = await exportProject({ dataDir, storageDir: opts.storageDir, outFile, log }).catch(fail)
+      console.error(`Wrote ${outFile} (${bytes} bytes, ${manifest.pristine.pristine ? 'pristine' : manifest.pristine.state})`)
+      return
+    }
+    // `tinbase db import <file> [--force]` - into an empty or stopped data directory
+    const file = opts.positionals[1]
+    if (!file) {
+      console.error('usage: tinbase db import <file> [--force]')
+      process.exit(1)
+    }
+    refuseIfServerRunning(dataDir, 'db import')
+    refuseIfUnshareableServer(opts, 'db import')
+    const manifest = await importProject({
+      dataDir,
+      storageDir: opts.storageDir,
+      file: resolve(file),
+      force: opts.force,
+      log,
+    }).catch(fail)
+    console.error(`Imported ${file} (dumped ${manifest.createdAt} from Postgres ${manifest.postgres})`)
+    return
+  }
+
+  if (opts.command === 'db' && opts.positionals[0] === 'pristine') {
+    // `tinbase db pristine` - JSON on stdout; exit 0 pristine, 3 not
+    if (opts.engine !== 'native') {
+      console.error('db pristine needs the native engine (--engine native)')
+      process.exit(1)
+    }
+    const engine = await openNativeForReading(resolveDataDir(opts)!, (m) => console.error(`  ${m}`))
+    try {
+      const state = await checkPristine(engine)
+      process.stdout.write(JSON.stringify(state) + '\n')
+      process.exitCode = state.pristine ? 0 : 3
+    } finally {
+      await engine.close()
+    }
+    return
+  }
+
   if (opts.command === 'db') {
     const sub = opts.positionals[0]
     if (sub !== 'reset') {
-      console.error(`unknown db subcommand: ${sub ?? '(none)'} (supported: reset, diff, pull)`)
+      console.error(`unknown db subcommand: ${sub ?? '(none)'} (supported: reset, diff, pull, export, import, pristine)`)
       process.exit(1)
     }
     // `tinbase db reset` - wipe data + storage and re-run migrations + seed fresh
@@ -666,6 +736,30 @@ async function main(): Promise<void> {
   // `start` has to own its postmaster; migrate/status only read, so they attach to
   // one already running rather than failing on the data-directory lock.
   const readOnlyCommand = opts.command === 'migrate' || opts.command === 'status'
+
+  // A host restores a project by leaving an export archive at .tinbase/restore.tar.gz
+  // and starting the server: it is loaded before anything opens the database. A
+  // failed load stops startup instead of serving a fresh database in its place,
+  // and the archive stays for the next attempt.
+  const restoreFile = join(opts.dir, RESTORE_FILE)
+  if (opts.command === 'start' && opts.engine === 'native' && !opts.databaseUrl && existsSync(restoreFile)) {
+    console.log(`  restoring from ${restoreFile}`)
+    try {
+      const m = await importProject({
+        dataDir: dataDir!,
+        storageDir: opts.storageDir,
+        file: restoreFile,
+        force: true,
+        log: (msg) => console.log(`  ${msg}`),
+      })
+      await rm(restoreFile, { force: true })
+      console.log(`  restored (dumped ${m.createdAt} from Postgres ${m.postgres})`)
+    } catch (e) {
+      console.error(`\n  ✖ restore failed: ${(e as Error)?.message ?? e}\n    ${restoreFile} was kept.\n`)
+      process.exit(1)
+    }
+  }
+
   if (readOnlyCommand) {
     if (await runViaServer(opts)) return
     refuseIfUnshareableServer(opts, opts.command)

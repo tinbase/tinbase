@@ -28,8 +28,8 @@ const startupTimeoutMs = (): number => envMs('TINBASE_PG_STARTUP_TIMEOUT_MS', 20
 
 /**
  * How long to wait once postgres has answered "starting up". Generous on
- * purpose: this is crash recovery, and giving up mid-recovery leaves a database
- * that would have opened fine unreachable.
+ * purpose: after an unclean shutdown this is crash recovery, and giving up
+ * mid-recovery leaves a database that would have opened fine unreachable.
  */
 const recoveryTimeoutMs = (): number => envMs('TINBASE_PG_RECOVERY_TIMEOUT_MS', 300_000)
 
@@ -215,6 +215,7 @@ export async function createNativeEngine(opts: NativeEngineOptions): Promise<DbE
     // startup error, and the database never came up again.
     const deadline = Date.now() + startupTimeoutMs()
     const recoveryDeadline = Date.now() + recoveryTimeoutMs()
+    let announcedStart = false
     let announcedRecovery = false
     for (;;) {
       try {
@@ -222,9 +223,15 @@ export async function createNativeEngine(opts: NativeEngineOptions): Promise<DbE
       } catch (e) {
         const starting = (e as { code?: string })?.code === '57P03'
         if (starting) {
-          if (!announcedRecovery) {
+          // Every start answers 57P03 for its first moments, clean shutdown or
+          // not; only postgres's own log says it is recovering.
+          if (!announcedStart) {
+            announcedStart = true
+            console.warn('  postgres is starting up; waiting…')
+          }
+          if (!announcedRecovery && /not properly shut down|automatic recovery in progress/.test(stderr)) {
             announcedRecovery = true
-            console.warn('  postgres is starting up (crash recovery); waiting…')
+            console.warn('  postgres is recovering from an unclean shutdown; waiting…')
           }
           if (Date.now() > recoveryDeadline) throw e
           await new Promise((r) => setTimeout(r, 250))

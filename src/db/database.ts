@@ -8,6 +8,7 @@
 import { BOOTSTRAP_SQL, MINIMAL_BOOTSTRAP_SQL } from './bootstrap.js'
 import { PGMQ_SQL, CRON_SQL, NET_SQL, EXT_COMPAT_SQL, VAULT_SQL } from './emulated.js'
 import { rewriteMigrationSql } from './sql-compat.js'
+import { checkPristine, initSnapshot, recordSnapshot } from './pristine.js'
 
 // tinbase's default session search_path (matches bootstrap + Supabase's, with
 // the extensions schema on the path). Reset to this before each migration so a
@@ -143,6 +144,8 @@ export class Database {
       if (opts?.vaultKey) {
         await engine.query(`select set_config('app.settings.vault_key', $1, false)`, [opts.vaultKey])
       }
+      // Seed snapshot bookkeeping is advisory: it must never stop a database from opening.
+      await initSnapshot(engine).catch((e) => console.warn(`  seed snapshot: ${(e as Error)?.message ?? e}`))
     }
     return new Database(engine, opts?.vaultKey)
   }
@@ -226,6 +229,11 @@ export class Database {
   ): Promise<string[]> {
     const applied: string[] = []
     let failure: MigrationFailure | null = null
+    // A database still holding only what the files produced stays that way after
+    // more of the files apply, so its seed snapshot moves forward with them.
+    const wasPristine = this.engine.minimalBootstrap
+      ? false
+      : await checkPristine(this.engine).then((s) => s.pristine, () => false)
     // Plain code-unit comparison (not localeCompare, which is locale-dependent
     // and can reorder `_`/digits) so migrations apply in the same order on every
     // machine, matching the Supabase CLI's lexicographic version ordering.
@@ -337,6 +345,9 @@ export class Database {
       // the default so runtime queries resolve extension functions unqualified
       await this.engine.exec(DEFAULT_SEARCH_PATH_SQL)
       this.invalidateSchemaCache()
+      if (wasPristine) {
+        await recordSnapshot(this.engine).catch((e) => console.warn(`  seed snapshot: ${(e as Error)?.message ?? e}`))
+      }
     }
     return applied
   }

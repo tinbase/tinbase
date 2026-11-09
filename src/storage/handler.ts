@@ -1092,7 +1092,9 @@ export class StorageHandler {
     const bucket = await this.loadBucket(bucketId)
     if (!bucket) return storageError(404, 'Bucket not found', 'Bucket not found')
     const owner = typeof ctx.claims?.sub === 'string' ? ctx.claims.sub : undefined
-    const token = await this.makeSignToken('upload', bucketId, key, 7200, owner)
+    // A URL minted with the service_role key uploads with that key's rights, as on hosted
+    // Supabase: server code mints it and hands the URL to a client or script that has no key.
+    const token = await this.makeSignToken('upload', bucketId, key, 7200, owner, ctx.role === 'service_role')
     return json(200, {
       url: `/object/upload/sign/${bucketId}/${encPath(key)}?token=${token}`,
       token,
@@ -1108,9 +1110,12 @@ export class StorageHandler {
     // redeem as the token's owner (authenticated user) so RLS still governs the
     // write, rather than the RLS-bypassing service role.
     const owner = typeof claims.owner === 'string' ? claims.owner : undefined
-    const uploadCtx: RequestContext = owner
-      ? { role: 'authenticated', claims: { role: 'authenticated', sub: owner } }
-      : { role: 'anon', claims: { role: 'anon' } }
+    const uploadCtx: RequestContext =
+      claims.service === true
+        ? { role: 'service_role', claims: { role: 'service_role' } }
+        : owner
+          ? { role: 'authenticated', claims: { role: 'authenticated', sub: owner } }
+          : { role: 'anon', claims: { role: 'anon' } }
     return this.upload(req, uploadCtx, bucketId, key)
   }
 
@@ -1119,10 +1124,14 @@ export class StorageHandler {
     bucketId: string,
     key: string,
     expiresIn: number,
-    owner?: string
+    owner?: string,
+    service = false
   ): Promise<string> {
     const now = Math.floor(Date.now() / 1000)
-    return signJwt({ type, url: `${bucketId}/${key}`, iat: now, exp: now + clampExpiry(expiresIn), owner }, this.config.jwtSecret)
+    return signJwt(
+      { type, url: `${bucketId}/${key}`, iat: now, exp: now + clampExpiry(expiresIn), owner, ...(service ? { service: true } : {}) },
+      this.config.jwtSecret
+    )
   }
 }
 

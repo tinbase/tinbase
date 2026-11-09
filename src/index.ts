@@ -506,6 +506,13 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
         return withCors(await storage.handle(req, { role: 'anon', claims: null }, url))
       }
     }
+
+    // A signed upload URL carries its own token (storage verifies it), so like a signed download it
+    // needs no apikey: hosted Supabase accepts a bare PUT to it, and server-side callers that mint a
+    // URL and hand the bytes off (rapidnative's upload scripts) send nothing else.
+    if (path.startsWith('/storage/v1/object/upload/sign/') && req.method === 'PUT') {
+      return withCors(await storage.handle(req, { role: 'anon', claims: null }, url))
+    }
     if (config.authEnabled === false && path.startsWith('/auth/v1')) {
       return withCors(
         new Response(JSON.stringify({ message: 'Auth service is disabled' }), {
