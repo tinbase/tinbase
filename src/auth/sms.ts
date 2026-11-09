@@ -31,7 +31,9 @@ export interface TwilioConfig {
 export const DEFAULT_TWILIO_API_URL = 'https://api.twilio.com'
 
 /** The default `[auth.sms] template`: GoTrue's, with `{{ .Code }}` as the OTP. */
-export const DEFAULT_SMS_TEMPLATE = 'Your code is {{ .Code }}'
+// Matches the sample texts registered with US carriers for the platform's
+// A2P 10DLC campaign; a text that strays from them is likelier to be filtered.
+export const DEFAULT_SMS_TEMPLATE = 'Your code is {{ .Code }}. Do not share this code.'
 
 /** Substitute `{{ .Code }}` (any inner spacing, as Go's template syntax allows) into the SMS template. */
 export function renderSmsTemplate(template: string, code: string): string {

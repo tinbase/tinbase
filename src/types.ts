@@ -131,7 +131,7 @@ export interface BackendConfig {
   smsFetch?: typeof fetch
   /**
    * The SMS body, GoTrue's `[auth.sms] template`: `{{ .Code }}` is the OTP.
-   * Default "Your code is {{ .Code }}".
+   * Default "Your code is {{ .Code }}. Do not share this code.".
    */
   smsTemplate?: string
   /**

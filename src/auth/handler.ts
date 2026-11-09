@@ -51,7 +51,7 @@ export interface AuthConfig {
   mailer: Mailer
   /** sends phone OTP codes (sign-in, signup confirmation, phone change) */
   smsSender: SmsSender
-  /** `[auth.sms] template`; `{{ .Code }}` is the OTP. Default "Your code is {{ .Code }}". */
+  /** `[auth.sms] template`; `{{ .Code }}` is the OTP. Default "Your code is {{ .Code }}. Do not share this code.". */
   smsTemplate?: string
   /** What `/settings` reports as `sms_provider` (twilio, or the dev inbox / a custom sender). */
   smsProviderName?: string

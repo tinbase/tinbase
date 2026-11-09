@@ -72,7 +72,7 @@ describe('signInWithOtp({ phone }) + verifyOtp type sms', () => {
     expect(sent.error).toBeNull()
     expect(outbox).toHaveLength(1)
     expect(outbox[0].to).toBe('+15005550006')
-    expect(outbox[0].body).toMatch(/^Your code is \d{6}$/)
+    expect(outbox[0].body).toMatch(/^Your code is \d{6}\. Do not share this code\.$/)
 
     const verified = await supabase.auth.verifyOtp({ phone: '+15005550006', token: lastCode(), type: 'sms' })
     expect(verified.error).toBeNull()
