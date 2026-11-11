@@ -6,6 +6,20 @@ All notable changes to tinbase are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.22.6]
+
+### Fixed
+
+- Edge functions: remote TypeScript modules (`https://deno.land/x/...mod.ts`) compile as TypeScript instead of
+  JavaScript, so imports like djwt build (#179).
+- Edge functions: bare imports resolve through the function's `deno.json`, then `functions/import_map.json`,
+  then `functions/deno.json` (exact and `prefix/` keys, including from `_shared`) (#179).
+
+### Changed
+
+- Edge functions load on their first request instead of all at boot, so a project with many functions no
+  longer runs out of memory while starting. `TINBASE_FUNCTIONS_EAGER=1` restores eager loading (#179).
+
 ## [0.22.5]
 
 ### Added
