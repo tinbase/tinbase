@@ -363,8 +363,12 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
     config.functions instanceof Map
       ? config.functions
       : new Map(Object.entries(config.functions ?? {}))
+  // SUPABASE_URL is the API's own URL, as on Supabase, never the app's site URL: functions call
+  // createClient(Deno.env.get('SUPABASE_URL'), …) to reach the database. On orchd the site URL is the
+  // app's web host, so every such call hit the app instead (Jejak Bolaku, 2026-11-11: sign-up got
+  // "Not found: /rest/v1/app_users"). apiExternalUrl falls back to siteUrl when they aren't separated.
   const fnEnv = {
-    SUPABASE_URL: siteUrl,
+    SUPABASE_URL: apiExternalUrl,
     SUPABASE_ANON_KEY: anonKey,
     SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey,
     ...(config.functionEnv ?? {}),

@@ -6,6 +6,14 @@ All notable changes to tinbase are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.22.7]
+
+### Fixed
+
+- Edge functions: `SUPABASE_URL` is the API's own URL (`apiExternalUrl`), as on Supabase, instead of the
+  app's site URL. Where the two differ (every orchd deployment), `createClient(Deno.env.get('SUPABASE_URL'), …)`
+  inside a function reached the app's web host and failed with "Not found".
+
 ## [0.22.6]
 
 ### Fixed
