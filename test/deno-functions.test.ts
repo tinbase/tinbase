@@ -44,6 +44,25 @@ afterAll(async () => {
   await backend.close()
 })
 
+it('gives functions the API URL, not the site URL, as SUPABASE_URL', async () => {
+  const dir = projectWithFunctions({
+    url: `Deno.serve(() => new Response(Deno.env.get('SUPABASE_URL')))`,
+  })
+  const split = await createBackend({
+    functions: await loadFunctions(dir),
+    siteUrl: 'https://app.example.com',
+    apiExternalUrl: 'https://api.example.com',
+  })
+  try {
+    const res = await split.fetch(
+      new Request('http://127.0.0.1:54321/functions/v1/url', { method: 'POST', headers: { apikey: split.anonKey } })
+    )
+    expect(await res.text()).toBe('https://api.example.com')
+  } finally {
+    await split.close()
+  }
+})
+
 describe('Deno-style edge functions', () => {
   it('runs a Deno.serve() function unchanged and exposes Deno.env', async () => {
     const { data, error } = await supabase.functions.invoke('hello', { body: { name: 'tinbase' } })
