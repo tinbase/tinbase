@@ -722,7 +722,13 @@ async function main(): Promise<void> {
 
   const cfg = loadProjectConfig(opts.dir)
   const project = await loadSupabaseProject(opts.dir, { enabled: cfg.seed.enabled, paths: cfg.seed.paths })
-  const functions = await loadFunctions(opts.dir, cfg.functions)
+  // Functions bundle + import on first request: importing every function at
+  // boot holds each one's module graph (its own supabase-js, react, ...) at
+  // once, which alone can exceed a small container's memory limit.
+  // TINBASE_FUNCTIONS_EAGER=1 restores load-everything-at-startup.
+  const functions = await loadFunctions(opts.dir, cfg.functions, {
+    lazy: process.env.TINBASE_FUNCTIONS_EAGER !== '1',
+  })
   const functionEnv = await loadFunctionEnv(opts.dir)
   const webhooks = loadWebhooks(opts.dir)
   const dataDir = resolveDataDir(opts)
