@@ -105,6 +105,8 @@ export interface StorageConfig {
   quota?: number
   /** [storage.buckets.*]: buckets to create at boot */
   buckets?: BucketSeed[]
+  /** [storage.s3_protocol].enabled: serve the S3-compatible endpoint (default true) */
+  s3ProtocolEnabled?: boolean
 }
 
 /** The `[db.seed]` slice of config.toml. */
@@ -437,6 +439,8 @@ function readStorage(root: ConfigTable): StorageConfig {
   if (limit !== undefined) out.fileSizeLimit = limit
   const quota = getByteSize(storage, 'quota')
   if (quota !== undefined) out.quota = quota
+  const s3Enabled = getBool(tableAt(root, 'storage.s3_protocol'), 'enabled')
+  if (s3Enabled !== undefined) out.s3ProtocolEnabled = s3Enabled
 
   const buckets = tableAt(root, 'storage.buckets')
   if (buckets && buckets.children.size > 0) {

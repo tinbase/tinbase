@@ -182,6 +182,13 @@ export interface BackendConfig {
   storageQuotaBytes?: number | null
   /** Buckets to create at boot if absent (config.toml storage.buckets.*). */
   buckets?: BucketSeed[]
+  /**
+   * The S3-compatible endpoint at /storage/v1/s3 (Supabase's S3 protocol).
+   * On by default. Keys left unset are the Supabase CLI's local S3 keys with
+   * the default JWT secret, and derived from the JWT secret otherwise (see
+   * `deriveS3Credentials`). `false` turns the endpoint off.
+   */
+  s3?: S3Config | false
   /** Force sign-out after this many seconds regardless of activity (config.toml auth.sessions.timebox). */
   sessionTimeboxSeconds?: number
   /** Sign out after this many seconds of inactivity (config.toml auth.sessions.inactivity_timeout). */
@@ -291,6 +298,35 @@ export interface StorageDriver {
    * driver without it falls back to `get()` and a slice.
    */
   getRange?(key: string, start: number, end: number): Promise<Uint8Array | null>
+  /**
+   * Optional: write an object from a stream of chunks without holding it all in
+   * memory. The object must not become visible under `key` until the stream has
+   * ended without error (write to a temporary name, then rename). A driver
+   * without it is written through `put()` after the chunks are collected.
+   */
+  putStream?(key: string, body: AsyncIterable<Uint8Array>): Promise<void>
+  /**
+   * Optional: stream bytes `start`..`end` (inclusive; the whole object when
+   * omitted), or null if it does not exist. Large downloads use it so they are
+   * never read into memory at once.
+   */
+  getStream?(key: string, start?: number, end?: number): Promise<ReadableStream<Uint8Array> | null>
+  /** Optional: rename an object, replacing any object at `to`. Fallback: get + put + delete. */
+  move?(from: string, to: string): Promise<void>
+  /** Optional: copy an object, replacing any object at `to`. Fallback: get + put. */
+  copy?(from: string, to: string): Promise<void>
+}
+
+/** Settings for the S3-compatible endpoint ({@link BackendConfig.s3}). */
+export interface S3Config {
+  /** Access key id (TINBASE_S3_ACCESS_KEY_ID). Set it together with secretAccessKey. */
+  accessKeyId?: string
+  /** Secret access key (TINBASE_S3_SECRET_ACCESS_KEY). */
+  secretAccessKey?: string
+  /** Region reported to clients (TINBASE_S3_REGION). Default "local", like the Supabase CLI. Clients may sign with any region. */
+  region?: string
+  /** false turns the endpoint off ([storage.s3_protocol] enabled = false). Default true. */
+  enabled?: boolean
 }
 
 /** Error carrying an HTTP status + JSON body, thrown by handlers and rendered as-is to the client. */

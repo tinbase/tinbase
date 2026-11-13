@@ -22,6 +22,8 @@ import { RealtimeEngine } from './realtime/engine.js'
 import { RestHandler } from './rest/handler.js'
 import { MemoryStorageDriver } from './storage/driver.js'
 import { StorageHandler } from './storage/handler.js'
+import { S3Handler, S3_PATH } from './storage/s3/handler.js'
+import { deriveS3Credentials, SUPABASE_LOCAL_S3_SECRET_ACCESS_KEY, type S3Credentials } from './storage/s3/credentials.js'
 import { WebhooksService, type WebhookDelivery } from './webhooks/service.js'
 import { CronService } from './cron/service.js'
 import { NetService, type NetDelivery } from './net/service.js'
@@ -44,6 +46,13 @@ export { Database } from './db/database.js'
 export { createPgmemEngine } from './db/pgmem-engine.js'
 export { createPgliteEngine } from './db/pglite-engine.js'
 export { MemoryStorageDriver } from './storage/driver.js'
+export {
+  deriveS3Credentials,
+  SUPABASE_LOCAL_S3_ACCESS_KEY_ID,
+  SUPABASE_LOCAL_S3_SECRET_ACCESS_KEY,
+  DEFAULT_S3_REGION,
+  type S3Credentials,
+} from './storage/s3/credentials.js'
 export { InboxMailer, type InboxEntry } from './auth/inbox.js'
 export { ResendMailer, type ResendMailerOptions } from './auth/resend.js'
 export { TwilioSmsSender, normalizePhone, normalizeTestOtp, parseTestOtpEnv, renderSmsTemplate, DEFAULT_SMS_TEMPLATE, DEFAULT_TWILIO_API_URL, type TwilioConfig } from './auth/sms.js'
@@ -93,6 +102,11 @@ export interface TinbaseBackend {
   jwtSecret: string
   /** Recent server logs (also surfaced in the Studio Logs pane). */
   logs: LogBuffer
+  /**
+   * The S3-compatible endpoint's credentials and region (served at
+   * /storage/v1/s3), or null when it is turned off.
+   */
+  s3: S3Credentials | null
   /** Captured dev email inbox (mounted at /inbox), or null if a custom mailer was provided. */
   inbox: InboxMailer | null
   /** Apply additional migrations at runtime. */
@@ -130,9 +144,13 @@ const CORS_HEADERS: Record<string, string> = {
   'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD',
   'access-control-allow-headers':
     'authorization, apikey, content-type, prefer, accept, accept-profile, content-profile, range, x-upsert, x-client-info, x-supabase-api-version, cache-control',
-  'access-control-expose-headers': 'content-range, range-unit, content-profile, accept-ranges',
+  'access-control-expose-headers': 'content-range, range-unit, content-profile, accept-ranges, etag',
   'access-control-max-age': '86400',
 }
+
+/** Response headers a browser may read from an S3 response (ETag for multipart uploads, x-amz-meta-*). */
+const S3_EXPOSE_HEADERS =
+  'etag, x-amz-request-id, x-amz-version-id, content-range, accept-ranges, content-length, content-disposition, last-modified, *'
 
 /**
  * Build a running tinbase backend from {@link BackendConfig}. Wires the
@@ -300,7 +318,8 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
       return id
     },
   }
-  const storage = new StorageHandler(db, config.storageDriver ?? new MemoryStorageDriver(), {
+  const storageDriver = config.storageDriver ?? new MemoryStorageDriver()
+  const storage = new StorageHandler(db, storageDriver, {
     jwtSecret,
     defaultFileSizeLimit: config.storageFileSizeLimit,
     quotaBytes: config.storageQuotaBytes ?? null,
@@ -308,6 +327,28 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
   })
   if (config.buckets?.length) await storage.ensureBuckets(config.buckets)
   await storage.loadQuota()
+
+  // S3-compatible endpoint on the same buckets and objects. Its keys act with
+  // service_role rights, so a deployed server must never use the public ones.
+  const s3Settings = config.s3 === false ? { enabled: false } : (config.s3 ?? {})
+  const s3Enabled = s3Settings.enabled !== false
+  const s3Credentials = await deriveS3Credentials(jwtSecret, s3Settings)
+  if (s3Enabled && isNetworkExposed(config.host) && s3Credentials.secretAccessKey === SUPABASE_LOCAL_S3_SECRET_ACCESS_KEY) {
+    await failStartup(
+      new Error(
+        `Refusing to start: the S3 secret access key is the public Supabase local-dev default while bound to a ` +
+          `network-exposed host (${config.host}). Anyone reaching this port could read and write every bucket. ` +
+          `Set TINBASE_S3_SECRET_ACCESS_KEY (or leave it unset to derive one from the JWT secret).`
+      )
+    )
+  }
+  const s3 = new S3Handler(db, storageDriver, storage, {
+    credentials: s3Credentials,
+    enabled: s3Enabled,
+    jwtSecret,
+    anonKey,
+    log,
+  })
   const auth = new AuthHandler(db, {
     jwtSecret,
     siteUrl,
@@ -435,6 +476,11 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
     const path = url.pathname
 
     if (req.method === 'OPTIONS') {
+      // S3 clients send x-amz-* and SDK headers too many to list; allow what the preflight asks for.
+      const requested = req.headers.get('access-control-request-headers')
+      if (requested && (path === S3_PATH || path.startsWith(`${S3_PATH}/`))) {
+        return new Response(null, { status: 204, headers: { ...CORS_HEADERS, 'access-control-allow-headers': requested } })
+      }
       return new Response(null, { status: 204, headers: CORS_HEADERS })
     }
     if (path === '/' || path === '/health') {
@@ -497,6 +543,13 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
     // `backend.inbox` keeps working in tests.
     if (inbox && !isNetworkExposed(config.host) && (path === '/inbox' || path.startsWith('/inbox/'))) {
       return withCors(inbox.serve(req, url))
+    }
+
+    // S3 protocol: authenticated by AWS Signature V4, not an apikey
+    if (path === S3_PATH || path.startsWith(`${S3_PATH}/`)) {
+      const res = await s3.handle(req, url)
+      res.headers.set('access-control-expose-headers', S3_EXPOSE_HEADERS)
+      return withCors(res)
     }
 
     // public endpoints that skip apikey checks
@@ -619,6 +672,7 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
     jwtSecret,
     logs,
     inbox,
+    s3: s3Enabled ? s3Credentials : null,
     migrate: (migrations, seedSql) => db.runMigrations(migrations, seedSql),
     close: async () => {
       auth.stop()

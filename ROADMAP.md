@@ -44,7 +44,7 @@ Until the harness exists, coverage numbers below are our own honest estimates.
 | --- | --- | --- |
 | Database (PostgREST) | ~95% | aggregates *within embeds*; error-shape parity (harness) |
 | Auth (GoTrue) | ~90% | SSO, phone auth |
-| Storage | ~90% | image transforms served as no-op (real resize needs a codec) |
+| Storage | ~90% | image transforms served as no-op (real resize needs a codec); S3 protocol in-progress multipart uploads are in memory |
 | Realtime | ~90% | per-row DELETE RLS (WALRUS) |
 | Edge Functions | ~85% | remote-import fetch needs network at first run |
 | Studio | ~95% | image previews for large files, saved-query sharing |
@@ -114,6 +114,15 @@ in the theseus native Postgres binaries or this PGlite build. Two tracks:
 - [x] Storage resumable (TUS) uploads — TUS 1.0.0 creation, creation-with-upload,
       core PATCH, and termination; upload state held in memory (resumes within a
       server session), finalized through the normal object-write path
+- [x] Storage S3 protocol (`/storage/v1/s3`, as `supabase start` serves it) — SigV4
+      header + presigned auth (incl. signed/unsigned aws-chunked bodies), bucket CRUD,
+      object CRUD, DeleteObjects, ListObjects(V2), CopyObject, multipart incl.
+      UploadPartCopy, Supabase session-token mode with RLS; streams to disk on the
+      same `storage.objects` rows as the storage API
+- [ ] S3 follow-ups: persist in-progress multipart uploads across restarts (state is
+      in memory, like TUS), GetObject `partNumber` > 1, folder-marker keys (`dir/`),
+      crc32c / crc64nvme checksum verification, the S3 protocol in the browser build
+      (needs MD5/SHA-256 without node:crypto)
 - [ ] Storage image transformations — interim **no-op**: transform requests
       (`/render/image/{public,authenticated,sign}/…`) serve the *original* object
       (with a one-time warning) so apps don't 404. Real resize/re-encode still

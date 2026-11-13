@@ -6,6 +6,8 @@
 import type { Database } from '../db/database.js'
 import { signJwt, verifyJwt } from '../jwt.js'
 import type { BucketSeed, RequestContext, StorageDriver } from '../types.js'
+import { nodeCrypto } from './s3/sigv4.js'
+import { openRead } from './stream-io.js'
 
 /** Construction options for {@link StorageHandler}. */
 export interface StorageConfig {
@@ -71,7 +73,7 @@ function clampExpiry(expiresIn: number): number {
  * the metadata row and the on-disk path. Returns an error string, or null when
  * the key is safe.
  */
-function invalidObjectKey(key: string): string | null {
+export function invalidObjectKey(key: string): string | null {
   if (!key) return 'object key is required'
   if (key.length > 1024) return 'object key too long'
   if (key.includes('\0')) return 'object key contains a null byte'
@@ -82,7 +84,8 @@ function invalidObjectKey(key: string): string | null {
   return null
 }
 
-interface ObjectRow {
+/** A storage.objects row. */
+export interface ObjectRow {
   id: string
   bucket_id: string
   name: string
@@ -93,7 +96,8 @@ interface ObjectRow {
   last_accessed_at: Date | string | null
 }
 
-interface BucketRow {
+/** A storage.buckets row. */
+export interface BucketRow {
   id: string
   name: string
   public: boolean
@@ -120,7 +124,7 @@ function iso(v: Date | string | null): string | null {
 }
 
 /** Content types a browser will render and that can execute script in-origin. */
-function isRenderableActiveType(contentType: string): boolean {
+export function isRenderableActiveType(contentType: string): boolean {
   const t = contentType.split(';')[0].trim().toLowerCase()
   return (
     t === 'text/html' ||
@@ -251,15 +255,47 @@ export class StorageHandler {
   }
 
   private async refuseQuota(used: number, quota: number): Promise<Response> {
+    return storageError(413, 'storage_quota_exceeded', await this.recordQuotaRefusal(used, quota))
+  }
+
+  /** Record a quota refusal (admin API's last_refused_at) and return the message to show. */
+  private async recordQuotaRefusal(used: number, quota: number): Promise<string> {
     this.lastRefusedAt = new Date().toISOString()
     await this.saveConfig('quota_refused', { at: this.lastRefusedAt }).catch(() => {})
     this.config.log?.(`[storage] write refused: storage quota reached (${formatBytes(used)} of ${formatBytes(quota)})`)
-    return storageError(
-      413,
-      'storage_quota_exceeded',
+    return (
       `This app has reached its storage limit (${formatBytes(used)} of ${formatBytes(quota)}). ` +
-        'The project owner can free up space or upgrade their plan.'
+      'The project owner can free up space or upgrade their plan.'
     )
+  }
+
+  // ── shared with the S3 endpoint ─────────────────────────────────────────
+
+  /**
+   * Quota check for a write of `adding` bytes (replacing `replaces`, if set),
+   * for callers outside this handler: the refusal message, or null when it fits.
+   * Run it inside {@link serializeWrite} together with the write it guards.
+   */
+  async quotaRefusal(adding: number, replaces?: { bucketId: string; key: string }): Promise<string | null> {
+    const res = await this.checkQuota(adding, replaces)
+    if (!res) return null
+    const body = (await res.json().catch(() => ({}))) as { message?: string }
+    return body.message ?? 'storage quota exceeded'
+  }
+
+  /** Run a quota-checked write serialized with every other one (see serializeQuota). */
+  serializeWrite<T>(fn: () => Promise<T>): Promise<T> {
+    return this.serializeQuota(fn)
+  }
+
+  /** A bucket row, or null. */
+  bucketRow(id: string): Promise<BucketRow | null> {
+    return this.loadBucket(id)
+  }
+
+  /** Effective per-object byte limit for a bucket, or undefined for none. */
+  objectSizeLimit(bucket: BucketRow): number | undefined {
+    return this.sizeLimitFor(bucket)
   }
 
   /**
@@ -573,7 +609,7 @@ export class StorageHandler {
     upsert: boolean
   ): Promise<string> {
     const metadata = {
-      eTag: `"${crypto.randomUUID()}"`,
+      eTag: `"${md5Hex(bytes) ?? crypto.randomUUID()}"`,
       size: bytes.length,
       mimetype: contentType,
       cacheControl,
@@ -811,7 +847,9 @@ export class StorageHandler {
     // or a ranged read of a large object does not load all of it.
     let bytes: Uint8Array | null = null
     let size: number | null
-    if (this.driver.size && (head || range !== null)) {
+    // A driver that can stream serves a full GET without loading the object.
+    const streaming = !!(this.driver.getStream && this.driver.size)
+    if (this.driver.size && (head || range !== null || streaming)) {
       size = await this.driver.size(path)
     } else {
       bytes = await this.driver.get(path)
@@ -832,6 +870,9 @@ export class StorageHandler {
     }
     // The content-type is attacker-controlled at upload time; force active
     // content to download instead of rendering same-origin (stored-XSS guard).
+    if (typeof meta.contentDisposition === 'string' && meta.contentDisposition) {
+      headers['content-disposition'] = meta.contentDisposition
+    }
     if (isRenderableActiveType(contentType)) headers['content-disposition'] = 'attachment'
 
     const span = range === null ? null : parseByteRange(range, size)
@@ -845,8 +886,11 @@ export class StorageHandler {
       const [start, end] = span
       headers['content-length'] = String(end - start + 1)
       headers['content-range'] = `bytes ${start}-${end}/${size}`
-      let body: Uint8Array | null = null
-      if (!head) {
+      let body: Uint8Array | ReadableStream<Uint8Array> | null = null
+      if (!head && streaming) {
+        body = await openRead(this.driver, path, start, end)
+        if (body === null) return storageError(404, 'not_found', 'Object not found')
+      } else if (!head) {
         body = bytes
           ? bytes.subarray(start, end + 1)
           : this.driver.getRange
@@ -855,6 +899,11 @@ export class StorageHandler {
         if (body === null) return storageError(404, 'not_found', 'Object not found')
       }
       return new Response(body as BodyInit | null, { status: 206, headers })
+    }
+    if (!head && bytes === null && streaming) {
+      const stream = await openRead(this.driver, path)
+      if (stream === null) return storageError(404, 'not_found', 'Object not found')
+      return new Response(stream, { status: 200, headers })
     }
     if (!head && bytes === null) {
       bytes = await this.driver.get(path)
@@ -1242,8 +1291,14 @@ export function parseMultipart(bytes: Uint8Array, boundary: string): MultipartPa
   return parts
 }
 
-function likeEscape(s: string): string {
+export function likeEscape(s: string): string {
   return s.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')
+}
+
+/** MD5 hex of `bytes` (the S3 ETag), or null where node:crypto is unavailable. */
+function md5Hex(bytes: Uint8Array): string | null {
+  const c = nodeCrypto()
+  return c ? c.createHash('md5').update(bytes).digest('hex') : null
 }
 
 function encPath(key: string): string {
