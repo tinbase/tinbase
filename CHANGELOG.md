@@ -6,6 +6,17 @@ All notable changes to tinbase are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.22.8]
+
+### Fixed
+
+- In a [Lifo](https://lifo.sh) box (a browser tab, Node or a Lifo Cloud isolate; it reports `linux`/`x64` but
+  runs nothing native) `tinbase start` picked the native engine and failed downloading Postgres binaries. The
+  default there is now the wasm engine (PGlite), which keeps its database on the box's disk in `.tinbase/db`,
+  so data survives a restart and a Lifo Cloud box going to sleep. `--engine native` in a box is refused up
+  front with the alternatives (`wasm`, `pgmem`). A box is recognised by `process.versions.lifo`.
+- An empty `TINBASE_ENGINE` (`TINBASE_ENGINE= tinbase start`) means unset instead of an invalid engine.
+
 ## [0.22.7]
 
 ### Fixed

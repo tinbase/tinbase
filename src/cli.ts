@@ -32,10 +32,9 @@ const IS_BUN = typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined'
 // single-file builds ship without the WASM engine; native is the default there
 const IS_BINARY = process.env.TINBASE_SINGLE_BINARY === '1'
 // Native (embedded Postgres) is the default where it's supported - macOS/Linux
-// on x64/arm64. Elsewhere (e.g. Windows) fall back to the WASM (PGlite) engine.
-const NATIVE_SUPPORTED =
-  (process.platform === 'darwin' || process.platform === 'linux') &&
-  (process.arch === 'arm64' || process.arch === 'x64')
+// on x64/arm64. Elsewhere (Windows, a Lifo box) fall back to the WASM (PGlite) engine.
+const ENGINE_HOST = { platform: process.platform, arch: process.arch, versions: process.versions as Record<string, string | undefined>, isBinary: IS_BINARY }
+import { defaultEngine, nativeUnavailableReason } from './default-engine.js'
 import { deriveApiKeys } from './jwt.js'
 import { isNetworkExposed } from './security.js'
 import { DEFAULT_JWT_SECRET, TINBASE_VERSION } from './types.js'
@@ -95,7 +94,8 @@ function parseArgs(argv: string[]): CliOptions {
     storageDir: '',
     jwtSecret: process.env.TINBASE_JWT_SECRET ?? DEFAULT_JWT_SECRET,
     memory: false,
-    engine: (process.env.TINBASE_ENGINE as 'wasm' | 'native' | 'pgmem') ?? (IS_BINARY || NATIVE_SUPPORTED ? 'native' : 'wasm'),
+    // an empty TINBASE_ENGINE (`TINBASE_ENGINE= tinbase start`) means unset
+    engine: (process.env.TINBASE_ENGINE as 'wasm' | 'native' | 'pgmem') || defaultEngine(ENGINE_HOST),
     databaseUrl: process.env.TINBASE_DATABASE_URL || process.env.DATABASE_URL || undefined,
     force: false,
   }
@@ -132,6 +132,13 @@ function parseArgs(argv: string[]): CliOptions {
     }
   }
   if (!opts.storageDir) opts.storageDir = join(opts.dir, '.tinbase', 'storage')
+  // asked for by --engine or TINBASE_ENGINE on a host that can't run it: say so now, rather
+  // than failing later in the binary download
+  const noNative = opts.engine === 'native' && !opts.databaseUrl ? nativeUnavailableReason(ENGINE_HOST) : undefined
+  if (noNative) {
+    console.error(noNative)
+    process.exit(1)
+  }
   return opts
 }
 
