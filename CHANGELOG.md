@@ -6,6 +6,8 @@ All notable changes to tinbase are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.23.0]
+
 ### Added
 
 - Storage: Supabase's S3 protocol at `/storage/v1/s3`, on the same buckets and objects as the storage API,
