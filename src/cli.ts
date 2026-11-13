@@ -73,6 +73,7 @@ interface CliOptions {
   outFile?: string
   /** `db import --force`: replace an existing (stopped) database */
   force: boolean
+  s3: boolean
 }
 
 /**
@@ -98,6 +99,7 @@ function parseArgs(argv: string[]): CliOptions {
     engine: (process.env.TINBASE_ENGINE as 'wasm' | 'native' | 'pgmem') || defaultEngine(ENGINE_HOST),
     databaseUrl: process.env.TINBASE_DATABASE_URL || process.env.DATABASE_URL || undefined,
     force: false,
+    s3: false,
   }
   for (let i = 0; i < args.length; i++) {
     const a = args[i]
@@ -113,6 +115,7 @@ function parseArgs(argv: string[]): CliOptions {
     else if (a === '-f' || a === '--file') opts.diffFile = next()
     else if (a === '-o' || a === '--out') opts.outFile = resolve(next())
     else if (a === '--force') opts.force = true
+    else if (a === '--s3') opts.s3 = true
     else if (a === '--engine') {
       const v = next()
       if (v !== 'wasm' && v !== 'native' && v !== 'pgmem') {
@@ -438,7 +441,7 @@ Commands:
   start      start the server (default)
   migrate    apply pending supabase/migrations/*.sql and exit
   status     list applied migrations
-  keys       print anon and service_role keys
+  keys       print anon and service_role keys (--s3: the S3 access key, secret and region instead)
   gen types  print a TypeScript Database type for the current schema
   db reset   wipe the database + storage and re-run migrations and seed
   db diff    print DDL for schema changes not yet in migrations (-f <name> to write a migration)
@@ -728,17 +731,22 @@ async function main(): Promise<void> {
       opts.jwtSecret,
       process.env.NODE_ENV === 'production' ? 'unique' : 'deterministic'
     )
+    // `tinbase keys` output is a contract: scripts read the service_role key from its LAST
+    // line. The S3 credentials are a separate listing (`tinbase keys --s3`) so it stays so.
+    if (opts.s3) {
+      const s3 = await deriveS3Credentials(opts.jwtSecret, s3SettingsFromEnv())
+      console.log('S3 access key id:')
+      console.log(s3.accessKeyId)
+      console.log('\nS3 secret access key:')
+      console.log(s3.secretAccessKey)
+      console.log('\nS3 region:')
+      console.log(s3.region)
+      return
+    }
     console.log('anon key:')
     console.log(anonKey)
     console.log('\nservice_role key:')
     console.log(serviceRoleKey)
-    const s3 = await deriveS3Credentials(opts.jwtSecret, s3SettingsFromEnv())
-    console.log('\nS3 access key id:')
-    console.log(s3.accessKeyId)
-    console.log('\nS3 secret access key:')
-    console.log(s3.secretAccessKey)
-    console.log('\nS3 region:')
-    console.log(s3.region)
     return
   }
 

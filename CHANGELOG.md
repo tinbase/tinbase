@@ -22,7 +22,7 @@ All notable changes to tinbase are documented here. The format follows
 - `TINBASE_S3_ACCESS_KEY_ID` / `TINBASE_S3_SECRET_ACCESS_KEY` / `TINBASE_S3_REGION` /
   `TINBASE_S3_ENABLED`, and `[storage.s3_protocol] enabled` in config.toml. With the default JWT secret the
   keys default to the Supabase CLI's local S3 keys (region `local`); with any other secret they are derived
-  from it. `tinbase start` and `tinbase keys` print them. A network-exposed server refuses the public
+  from it. `tinbase start` and `tinbase keys --s3` print them (plain `tinbase keys` output is unchanged). A network-exposed server refuses the public
   default secret. `createBackend({ s3 })` and `backend.s3` for embedders.
 
 ### Changed

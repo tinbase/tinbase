@@ -69,6 +69,7 @@ tinbase start      # boot the server (applies pending migrations first)
 tinbase migrate    # apply pending migrations and exit
 tinbase status     # list applied migrations
 tinbase keys       # print anon / service_role keys (deterministic in dev, unique when NODE_ENV=production)
+tinbase keys --s3  # print the S3 access key id, secret and region
 tinbase gen types  # print a TypeScript Database type for the schema
 tinbase db reset   # wipe the database + storage, re-run migrations and seed
 tinbase db diff    # DDL for schema changes not yet in migrations (-f <name> to save one)
@@ -271,7 +272,7 @@ user's access token as the session token; the request then runs as that user and
 
 | Setting | Default |
 | --- | --- |
-| `TINBASE_S3_ACCESS_KEY_ID` / `TINBASE_S3_SECRET_ACCESS_KEY` (set both) | the Supabase CLI local keys with the default JWT secret; otherwise derived from the JWT secret (`tinbase keys` prints them) |
+| `TINBASE_S3_ACCESS_KEY_ID` / `TINBASE_S3_SECRET_ACCESS_KEY` (set both) | the Supabase CLI local keys with the default JWT secret; otherwise derived from the JWT secret (`tinbase keys --s3` prints them) |
 | `TINBASE_S3_REGION` | `local` (clients may sign with any region) |
 | `TINBASE_S3_ENABLED=false` or `[storage.s3_protocol] enabled = false` | on |
 
