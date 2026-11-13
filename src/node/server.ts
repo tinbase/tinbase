@@ -1,6 +1,8 @@
 /** Node HTTP wrapper: serves the backend's fetch handler and upgrades /realtime/v1 WebSockets. */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { createServer as createNetServer } from 'node:net'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import type { TinbaseBackend } from '../index.js'
 import { acceptWebSocket } from './ws.js'
 
@@ -58,6 +60,10 @@ export async function serve(backend: TinbaseBackend, opts: ServeOptions = {}): P
       const response = await backend.fetch(request)
       await writeResponse(response, res)
     } catch (e) {
+      if (res.headersSent) {
+        res.destroy()
+        return
+      }
       res.writeHead(500, { 'content-type': 'application/json' })
       res.end(JSON.stringify({ message: e instanceof Error ? e.message : String(e) }))
     }
@@ -115,13 +121,20 @@ async function toRequest(req: IncomingMessage, fallbackHost: string): Promise<Re
   // without trusting a client-supplied x-forwarded-for header.
   const remote = req.socket.remoteAddress
   if (remote) headers.set('x-tinbase-remote-addr', remote)
-  let body: Buffer | undefined
-  if (method !== 'GET' && method !== 'HEAD') {
-    const chunks: Buffer[] = []
-    for await (const chunk of req) chunks.push(chunk as Buffer)
-    body = Buffer.concat(chunks)
-  }
-  return new Request(url, { method, headers, body: body as BodyInit | undefined })
+  // The body is handed over as a stream, not read up front, so a large upload
+  // (an S3 PutObject or UploadPart) can go straight to disk instead of being
+  // held in memory whole. Handlers that want it all still call arrayBuffer()/json().
+  const hasBody =
+    method !== 'GET' &&
+    method !== 'HEAD' &&
+    (req.headers['transfer-encoding'] !== undefined || Number(req.headers['content-length'] ?? 0) > 0)
+  if (!hasBody) return new Request(url, { method, headers })
+  return new Request(url, {
+    method,
+    headers,
+    body: Readable.toWeb(req) as unknown as ReadableStream<Uint8Array>,
+    duplex: 'half',
+  } as RequestInit)
 }
 
 async function writeResponse(response: Response, res: ServerResponse): Promise<void> {
@@ -130,10 +143,16 @@ async function writeResponse(response: Response, res: ServerResponse): Promise<v
     headers[key] = value
   })
   res.writeHead(response.status, headers)
-  if (response.body) {
-    const buf = Buffer.from(await response.arrayBuffer())
-    res.end(buf)
-  } else {
+  if (!response.body) {
     res.end()
+    return
+  }
+  // Stream the body with backpressure, so a large download is never buffered
+  // whole. Headers are already sent: a failure here (usually the client going
+  // away) can only end the connection.
+  try {
+    await pipeline(Readable.fromWeb(response.body as never), res)
+  } catch {
+    res.destroy()
   }
 }

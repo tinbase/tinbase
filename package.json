@@ -46,12 +46,15 @@
     "@electric-sql/pglite": "^0.5.4"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1168.0",
+    "@aws-sdk/lib-storage": "^3.1168.0",
+    "@aws-sdk/s3-request-presigner": "^3.1168.0",
     "@supabase/supabase-js": "^2.110.0",
     "@types/node": "^26.1.0",
+    "@types/nodemailer": "^7.0.0",
     "tsx": "^4.23.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.9",
-    "@types/nodemailer": "^7.0.0"
+    "vitest": "^4.1.9"
   },
   "repository": {
     "type": "git",
@@ -63,7 +66,7 @@
   },
   "optionalDependencies": {
     "esbuild": "^0.28.0",
-    "pg-mem": "npm:@tinbase/pg-mem@^3.4.0",
-    "nodemailer": "^7.0.0"
+    "nodemailer": "^7.0.0",
+    "pg-mem": "npm:@tinbase/pg-mem@^3.4.0"
   }
 }

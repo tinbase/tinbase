@@ -6,6 +6,33 @@ All notable changes to tinbase are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Storage: Supabase's S3 protocol at `/storage/v1/s3`, on the same buckets and objects as the storage API,
+  so an object put over S3 is in `storage.objects`, supabase-js, Studio and its public URL, and the other
+  way round. Path-style addressing; AWS Signature V4 in the Authorization header and in presigned URLs,
+  including `UNSIGNED-PAYLOAD` and aws-chunked bodies (`STREAMING-AWS4-HMAC-SHA256-PAYLOAD` with chunk
+  signatures, and the `STREAMING-UNSIGNED-PAYLOAD-TRAILER` the AWS SDK v3 sends for streams, with its CRC32
+  checked). Operations: ListBuckets, HeadBucket, CreateBucket, DeleteBucket, GetBucketLocation, PutObject,
+  GetObject/HeadObject (Range, `If-*`, `response-*`), DeleteObject, DeleteObjects, ListObjects(V2),
+  CopyObject, and multipart (Create, UploadPart, UploadPartCopy, Complete, Abort, ListParts,
+  ListMultipartUploads), with S3 ETags and S3 XML errors. Bucket size limits, MIME allowlists and the
+  project quota apply. The keys act as service_role; Supabase's session-token mode (anon key as the
+  secret, a user's JWT as the session token) runs as the user under RLS.
+- `TINBASE_S3_ACCESS_KEY_ID` / `TINBASE_S3_SECRET_ACCESS_KEY` / `TINBASE_S3_REGION` /
+  `TINBASE_S3_ENABLED`, and `[storage.s3_protocol] enabled` in config.toml. With the default JWT secret the
+  keys default to the Supabase CLI's local S3 keys (region `local`); with any other secret they are derived
+  from it. `tinbase start` and `tinbase keys --s3` print them (plain `tinbase keys` output is unchanged). A network-exposed server refuses the public
+  default secret. `createBackend({ s3 })` and `backend.s3` for embedders.
+
+### Changed
+
+- The Node server streams request and response bodies instead of buffering them whole, and the filesystem
+  storage driver gained streaming reads and writes (`putStream`, `getStream`, `move`, `copy`, all optional
+  on `StorageDriver`). Downloads from the storage API, public URLs included, no longer load the object into
+  memory.
+- Objects uploaded through the storage API get an MD5 ETag (as on Supabase) instead of a random one.
+
 ## [0.22.8]
 
 ### Fixed

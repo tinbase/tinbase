@@ -69,6 +69,7 @@ tinbase start      # boot the server (applies pending migrations first)
 tinbase migrate    # apply pending migrations and exit
 tinbase status     # list applied migrations
 tinbase keys       # print anon / service_role keys (deterministic in dev, unique when NODE_ENV=production)
+tinbase keys --s3  # print the S3 access key id, secret and region
 tinbase gen types  # print a TypeScript Database type for the schema
 tinbase db reset   # wipe the database + storage, re-run migrations and seed
 tinbase db diff    # DDL for schema changes not yet in migrations (-f <name> to save one)
@@ -137,6 +138,7 @@ const server = await serve(backend, { port: 54321 })
 | REST (PostgREST) | `/rest/v1` | select with embedded resources (to-one, to-many, many-to-many via junction, nested, `!inner`, aliases, hints, casts, JSON paths), all common filter operators incl. `or`/`and` trees, full-text search, order/limit/offset (top-level and per-embed), `single`/`maybeSingle`, `count`, insert/bulk insert, upsert (merge/ignore), update, delete, `Prefer` handling, RPC (scalar, `setof`, void, filters on results), PostgREST-shaped errors |
 | Auth (GoTrue) | `/auth/v1` | email/password signup + sign-in, anonymous sign-in, email OTP / magic links / recovery, phone (SMS OTP) sign-in, signup and phone change through Supabase's `[auth.sms.twilio]` provider, session refresh with rotation, `getUser`, `updateUser`, sign-out, admin user CRUD (service key), GoTrue-shaped errors. JWTs are HS256 via WebCrypto; passwords are PBKDF2 |
 | Storage | `/storage/v1` | bucket CRUD, upload (raw + multipart), download (with byte ranges), public objects, signed URLs, signed upload URLs, list with folder entries, move/copy, remove, size/MIME limits, a project-wide storage quota. Metadata lives in `storage.objects` with RLS enforced; bytes go through a pluggable driver (fs in Node, memory anywhere) |
+| Storage over S3 | `/storage/v1/s3` | Supabase's S3 protocol on the same buckets and objects: AWS Signature V4 (header and presigned URLs, signed and unsigned aws-chunked bodies), bucket CRUD, Put/Get/Head/Delete/DeleteObjects, ListObjects(V2), CopyObject, multipart uploads (incl. UploadPartCopy). Works with the AWS SDKs, `@aws-sdk/lib-storage` and the AWS CLI. See [S3 protocol](#s3-protocol) |
 | Edge Functions | `/functions/v1` | `supabase.functions.invoke()` - Supabase-style `Deno.serve(handler)` functions (with `Deno.env`) run unchanged, as do `export default` handlers; loaded from `supabase/functions/<name>/index.{ts,js,mjs}` by the CLI or passed via `createBackend({ functions })`. Web-API functions work as-is; with `esbuild` installed, TypeScript, `npm:`/`jsr:`/URL imports (remote `.ts` included) and import maps (`<fn>/deno.json`, `functions/import_map.json`) are bundled. The CLI loads each function on its first request (`TINBASE_FUNCTIONS_EAGER=1` loads all at startup) |
 | Queues (pgmq) | `pgmq.*` | Message queues via a pure-SQL pgmq subset (create/send/read/pop/delete/archive, visibility timeouts). Call from SQL or `supabase.schema('pgmq').rpc(...)`. No extension |
 | Cron | `cron.*` | Scheduled jobs, drop-in with pg_cron's API — `cron.schedule(name, '*/5 * * * *', 'sql')` (also the `'N seconds'` form), `cron.unschedule(...)`, and the `cron.job` / `cron.job_run_details` tables. Schedules match in **UTC**, like hosted pg_cron; an in-process scheduler runs due jobs and logs to `cron.job_run_details`. Jobs run while tinbase is up, with service-role privileges. No extension |
@@ -235,6 +237,60 @@ curl http://127.0.0.1:54321/admin/v1/stats -H "apikey: $SERVICE_ROLE_KEY"
 # {"users":3,"buckets":1,"objects":12,"migrations":4,"tables":6,"dbSize":"24 MB","dbSizeBytes":25165824,"version":"PostgreSQL 17.4"}
 ```
 
+### S3 protocol
+
+Storage also answers Supabase's S3 protocol at `/storage/v1/s3`, so code written for S3 (the AWS
+SDKs, `@aws-sdk/lib-storage`, the AWS CLI, rclone) can point at tinbase in development and at
+Supabase, AWS S3, Cloudflare R2 or DigitalOcean Spaces in production, with no MinIO container. It is
+the same storage as `/storage/v1`: an object put over S3 is a row in `storage.objects`, shows up in
+supabase-js, Studio and its public URL, and the other way round.
+
+`tinbase start` prints the endpoint and keys. With the default JWT secret they are the Supabase
+CLI's own local S3 keys, so a project already set up for `supabase start` needs no change:
+
+```ts
+import { S3Client } from '@aws-sdk/client-s3'
+
+const s3 = new S3Client({
+  endpoint: 'http://127.0.0.1:54321/storage/v1/s3',
+  region: 'local',
+  forcePathStyle: true, // path-style only: /storage/v1/s3/<bucket>/<key>
+  credentials: {
+    accessKeyId: '625729a08b95bf1b7ff351a663f3a23c',
+    secretAccessKey: '850181e4652dd023b7a98c58ae0d2d34bd487ee0cc3254aed6eda37307425907',
+  },
+})
+```
+
+```bash
+aws --endpoint-url http://127.0.0.1:54321/storage/v1/s3 s3 cp ./logo.png s3://media/logo.png
+```
+
+The keys act with service_role rights (RLS bypassed), as on Supabase, so keep them server-side.
+Supabase's session-token mode works too: any access key id, the anon key as the secret and a
+user's access token as the session token; the request then runs as that user and RLS applies.
+
+| Setting | Default |
+| --- | --- |
+| `TINBASE_S3_ACCESS_KEY_ID` / `TINBASE_S3_SECRET_ACCESS_KEY` (set both) | the Supabase CLI local keys with the default JWT secret; otherwise derived from the JWT secret (`tinbase keys --s3` prints them) |
+| `TINBASE_S3_REGION` | `local` (clients may sign with any region) |
+| `TINBASE_S3_ENABLED=false` or `[storage.s3_protocol] enabled = false` | on |
+
+On a network-exposed host tinbase refuses to start with the public default secret. Bodies stream
+to disk (a 1 GB upload does not grow the server's memory by 1 GB), ETags are S3's (MD5, and
+`md5-of-part-md5s-N` for multipart uploads), and the bucket size limit, MIME allowlist and
+project quota apply as they do to the storage API. Supported: ListBuckets, HeadBucket,
+CreateBucket (`x-amz-acl: public-read` makes it public), DeleteBucket, GetBucketLocation,
+PutObject (Content-Type, Cache-Control, Content-Disposition, Content-Encoding, Content-Language,
+Expires, `x-amz-meta-*`), GetObject/HeadObject (Range, `If-*` conditionals, `response-*`
+overrides), DeleteObject, DeleteObjects, ListObjects and ListObjectsV2 (prefix, delimiter,
+max-keys, continuation token, start-after, `encoding-type=url`), CopyObject (COPY/REPLACE
+metadata, `x-amz-copy-source-if-*`), and multipart: CreateMultipartUpload, UploadPart,
+UploadPartCopy, CompleteMultipartUpload, AbortMultipartUpload, ListParts, ListMultipartUploads.
+Not supported, as on Supabase: versioning, ACLs, tagging, lifecycle, CORS configuration,
+object lock, SSE and virtual-hosted-style addressing. Folder-marker keys (ending in `/`) are
+refused, and in-progress multipart uploads do not survive a restart.
+
 ## Studio
 
 tinbase ships with a built-in dashboard at [`/_/`](http://127.0.0.1:54321/_/) - the same shape as Supabase Studio, with real URL routing (deep links, back/forward), a `Ctrl+K` command palette, light/dark theming, and drag-resizable panels:
@@ -305,7 +361,7 @@ Rough coverage of the supabase-js SDK surface, measured against what each sub-li
 | --- | --- | --- | --- |
 | Database (`postgrest-js`) | ~85% | full filter grammar, embeds (to-one/to-many/m2m/nested/`!inner`), JSON paths, upsert, count, single/maybeSingle, RPC | aggregates in select, full spread embeds, `.explain()`, `.csv()`, geojson |
 | Auth (`auth-js`) | ~80% | email/password, anonymous sign-in, OTP + magic links + password recovery (pluggable mailer), OAuth providers (Google/GitHub presets + generic) with PKCE and identity linking, refresh rotation, user updates, admin CRUD | MFA, SSO/SAML, phone auth |
-| Storage (`storage-js`) | ~80% | buckets, upload/download, signed URLs + signed uploads, list/move/copy/remove, size/MIME limits | resumable (TUS) uploads, image transformations |
+| Storage (`storage-js`) | ~80% | buckets, upload/download, signed URLs + signed uploads, list/move/copy/remove, size/MIME limits, the S3 protocol | resumable (TUS) uploads, image transformations |
 | Realtime (`realtime-js`) | ~85% | postgres_changes with filters + **per-subscriber RLS filtering** (INSERT/UPDATE), broadcast (incl. binary), presence, v1+v2 serializers | per-row DELETE RLS, private channel auth, DB-triggered broadcast |
 | Edge Functions (`functions-js`) | ~70% | `invoke()`; **Deno.serve/Deno.env-style functions run unchanged** + export-default; auth context, project-dir loading | `npm:`/`jsr:`/URL import resolution, `supabase functions deploy` |
 | Type generation | ~85% | `tinbase gen types typescript` → `Database` type (Tables/Views/Functions/Enums/Relationships) | composite-type args, multi-schema output |

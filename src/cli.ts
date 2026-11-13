@@ -11,7 +11,7 @@ import { parseTestOtpEnv } from './auth/sms.js'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { createBackend, generateTypes, createPgmemEngine, inspectDb } from './index.js'
+import { createBackend, deriveS3Credentials, generateTypes, createPgmemEngine, inspectDb } from './index.js'
 import { computeDbDiff, pullSchema, shadowNativeDataDir } from './node/db-diff.js'
 import { attachNativeEngine, createNativeEngine, readRunningPostmaster } from './node/native/engine.js'
 import { exportProject, importProject, RESTORE_FILE } from './node/native/dump.js'
@@ -21,7 +21,7 @@ import { readServerLock, removeServerLock, writeServerLock, type ServerLock } fr
 import { FsStorageDriver } from './node/fs-driver.js'
 import { ResendMailer } from './auth/resend.js'
 import { SmtpMailer } from './node/smtp-mailer.js'
-import type { Mailer } from './types.js'
+import type { Mailer, S3Config } from './types.js'
 import { loadProjectConfig } from './node/load-config.js'
 import { loadFunctions, loadFunctionEnv } from './node/load-functions.js'
 import { loadSupabaseProject } from './node/project.js'
@@ -73,6 +73,7 @@ interface CliOptions {
   outFile?: string
   /** `db import --force`: replace an existing (stopped) database */
   force: boolean
+  s3: boolean
 }
 
 /**
@@ -98,6 +99,7 @@ function parseArgs(argv: string[]): CliOptions {
     engine: (process.env.TINBASE_ENGINE as 'wasm' | 'native' | 'pgmem') || defaultEngine(ENGINE_HOST),
     databaseUrl: process.env.TINBASE_DATABASE_URL || process.env.DATABASE_URL || undefined,
     force: false,
+    s3: false,
   }
   for (let i = 0; i < args.length; i++) {
     const a = args[i]
@@ -113,6 +115,7 @@ function parseArgs(argv: string[]): CliOptions {
     else if (a === '-f' || a === '--file') opts.diffFile = next()
     else if (a === '-o' || a === '--out') opts.outFile = resolve(next())
     else if (a === '--force') opts.force = true
+    else if (a === '--s3') opts.s3 = true
     else if (a === '--engine') {
       const v = next()
       if (v !== 'wasm' && v !== 'native' && v !== 'pgmem') {
@@ -438,7 +441,7 @@ Commands:
   start      start the server (default)
   migrate    apply pending supabase/migrations/*.sql and exit
   status     list applied migrations
-  keys       print anon and service_role keys
+  keys       print anon and service_role keys (--s3: the S3 access key, secret and region instead)
   gen types  print a TypeScript Database type for the current schema
   db reset   wipe the database + storage and re-run migrations and seed
   db diff    print DDL for schema changes not yet in migrations (-f <name> to write a migration)
@@ -458,6 +461,14 @@ Options:
                         for the native engine, <dir>/.tinbase/db for wasm)
       --storage-dir <p> storage files directory (default <dir>/.tinbase/storage)
       --jwt-secret <s>  JWT secret (or TINBASE_JWT_SECRET env var)
+
+S3 endpoint (env; served at /storage/v1/s3, keys act as service_role):
+  TINBASE_S3_ACCESS_KEY_ID      access key id    } set both, or neither: then the
+  TINBASE_S3_SECRET_ACCESS_KEY  secret key       } Supabase CLI's local keys with the
+                                                   default JWT secret, else keys derived
+                                                   from the JWT secret (tinbase keys)
+  TINBASE_S3_REGION             region reported to clients (default local)
+  TINBASE_S3_ENABLED=false      turn it off (also [storage.s3_protocol] enabled = false)
 
 Email (env):
   TINBASE_RESEND_API_KEY  deliver auth emails through Resend; without it they land
@@ -720,6 +731,18 @@ async function main(): Promise<void> {
       opts.jwtSecret,
       process.env.NODE_ENV === 'production' ? 'unique' : 'deterministic'
     )
+    // `tinbase keys` output is a contract: scripts read the service_role key from its LAST
+    // line. The S3 credentials are a separate listing (`tinbase keys --s3`) so it stays so.
+    if (opts.s3) {
+      const s3 = await deriveS3Credentials(opts.jwtSecret, s3SettingsFromEnv())
+      console.log('S3 access key id:')
+      console.log(s3.accessKeyId)
+      console.log('\nS3 secret access key:')
+      console.log(s3.secretAccessKey)
+      console.log('\nS3 region:')
+      console.log(s3.region)
+      return
+    }
     console.log('anon key:')
     console.log(anonKey)
     console.log('\nservice_role key:')
@@ -1086,6 +1109,7 @@ async function main(): Promise<void> {
     functionEnv,
     webhooks,
     storageDriver: new FsStorageDriver(opts.storageDir),
+    s3: s3SettingsFromEnv(cfg.storage.s3ProtocolEnabled),
     log: (msg) => console.log(`  ${msg}`),
   })
 
@@ -1142,7 +1166,18 @@ async function main(): Promise<void> {
 
           anon key: ${backend.anonKey}
   service_role key: ${backend.serviceRoleKey}
-
+${
+    backend.s3
+      ? `
+       S3 endpoint: ${server.url}/storage/v1/s3  (path-style)
+     S3 access key: ${backend.s3.accessKeyId}
+     S3 secret key: ${backend.s3.secretAccessKey}
+         S3 region: ${backend.s3.region}
+`
+      : `
+       S3 endpoint: off ([storage.s3_protocol] enabled = false or TINBASE_S3_ENABLED=false)
+`
+  }
   ${
     process.env.NODE_ENV === 'production'
       ? 'Keys are unique per start (NODE_ENV=production). For your env:'
@@ -1184,6 +1219,27 @@ main().catch((e) => {
   console.error(e)
   process.exit(1)
 })
+
+/**
+ * S3 endpoint settings from TINBASE_S3_* (env wins over config.toml's
+ * [storage.s3_protocol] enabled). Exits when only one half of the key pair is set.
+ */
+function s3SettingsFromEnv(enabledInConfig?: boolean): S3Config {
+  const accessKeyId = process.env.TINBASE_S3_ACCESS_KEY_ID?.trim() || undefined
+  const secretAccessKey = process.env.TINBASE_S3_SECRET_ACCESS_KEY?.trim() || undefined
+  if (!!accessKeyId !== !!secretAccessKey) {
+    console.error('\n  \u2716 Set TINBASE_S3_ACCESS_KEY_ID and TINBASE_S3_SECRET_ACCESS_KEY together, or neither.\n')
+    process.exit(1)
+  }
+  const flag = process.env.TINBASE_S3_ENABLED?.trim().toLowerCase()
+  const enabledInEnv = flag === undefined || flag === '' ? undefined : !['0', 'false', 'no', 'off'].includes(flag)
+  return {
+    accessKeyId,
+    secretAccessKey,
+    region: process.env.TINBASE_S3_REGION?.trim() || undefined,
+    enabled: enabledInEnv ?? enabledInConfig ?? true,
+  }
+}
 
 /** Parse TINBASE_STORAGE_QUOTA_BYTES: a non-negative integer byte count, else undefined (with a warning). */
 function parseQuotaEnv(raw: string | undefined): number | undefined {
