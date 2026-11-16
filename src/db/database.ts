@@ -104,6 +104,55 @@ export interface CdcEvent {
  * The database facade: wraps a {@link DbEngine} with bootstrap, migration
  * application, schema introspection (cached), and the realtime CDC pipeline.
  */
+/**
+ * A schema's foreign keys, one row per column pair. Straight from pg_catalog: the same listing through
+ * information_schema (table_constraints x referential_constraints x key_column_usage twice) took 90 s on
+ * PGlite for an app with 134 foreign keys (oversight.webapp's Reach, Nov 2026), and the RapidNative editor
+ * runs PGlite on the page's main thread, so the tab froze on the first table request. This returns the
+ * same rows in ~15 ms.
+ */
+export const FK_SQL_PG_CATALOG = `select
+   c.conname as constraint_name,
+   sn.nspname as src_schema, sc.relname as src_table,
+   sa.attname as src_column,
+   tn.nspname as tgt_schema, tc.relname as tgt_table,
+   ta.attname as tgt_column,
+   k.ord::int as ordinal
+ from pg_constraint c
+ join pg_class sc on sc.oid = c.conrelid
+ join pg_namespace sn on sn.oid = sc.relnamespace
+ join pg_class tc on tc.oid = c.confrelid
+ join pg_namespace tn on tn.oid = tc.relnamespace
+ cross join lateral unnest(c.conkey, c.confkey) with ordinality as k(src_att, tgt_att, ord)
+ join pg_attribute sa on sa.attrelid = c.conrelid and sa.attnum = k.src_att
+ join pg_attribute ta on ta.attrelid = c.confrelid and ta.attnum = k.tgt_att
+ where c.contype = 'f'
+   and (sn.nspname = $1 or tn.nspname = $1)
+ order by c.conname, k.ord`
+
+/** The same listing for pg-mem, which has information_schema but no pg_constraint key arrays. */
+export const FK_SQL_INFORMATION_SCHEMA = `select
+   tc.constraint_name,
+   tc.table_schema as src_schema, tc.table_name as src_table,
+   src.column_name as src_column,
+   tgt.table_schema as tgt_schema, tgt.table_name as tgt_table,
+   tgt.column_name as tgt_column,
+   src.ordinal_position as ordinal
+ from information_schema.table_constraints tc
+ join information_schema.referential_constraints rc
+   on rc.constraint_name = tc.constraint_name
+  and rc.constraint_schema = tc.constraint_schema
+ join information_schema.key_column_usage src
+   on src.constraint_name = tc.constraint_name
+  and src.constraint_schema = tc.constraint_schema
+ join information_schema.key_column_usage tgt
+   on tgt.constraint_name = rc.unique_constraint_name
+  and tgt.constraint_schema = rc.unique_constraint_schema
+  and tgt.ordinal_position = src.ordinal_position
+ where tc.constraint_type = 'FOREIGN KEY'
+   and (tc.table_schema = $1 or tgt.table_schema = $1)
+ order by tc.constraint_name, src.ordinal_position`
+
 export class Database {
   private schemaCache = new Map<string, SchemaInfo>()
   private fnCache = new Map<string, FunctionInfo[]>()
@@ -452,27 +501,7 @@ export class Database {
       tgt_column: string
       ordinal: number
     }>(
-      `select
-         tc.constraint_name,
-         tc.table_schema as src_schema, tc.table_name as src_table,
-         src.column_name as src_column,
-         tgt.table_schema as tgt_schema, tgt.table_name as tgt_table,
-         tgt.column_name as tgt_column,
-         src.ordinal_position as ordinal
-       from information_schema.table_constraints tc
-       join information_schema.referential_constraints rc
-         on rc.constraint_name = tc.constraint_name
-        and rc.constraint_schema = tc.constraint_schema
-       join information_schema.key_column_usage src
-         on src.constraint_name = tc.constraint_name
-        and src.constraint_schema = tc.constraint_schema
-       join information_schema.key_column_usage tgt
-         on tgt.constraint_name = rc.unique_constraint_name
-        and tgt.constraint_schema = rc.unique_constraint_schema
-        and tgt.ordinal_position = src.ordinal_position
-       where tc.constraint_type = 'FOREIGN KEY'
-         and (tc.table_schema = $1 or tgt.table_schema = $1)
-       order by tc.constraint_name, src.ordinal_position`,
+      this.engine.minimalBootstrap ? FK_SQL_INFORMATION_SCHEMA : FK_SQL_PG_CATALOG,
       [schema]
     )
 
