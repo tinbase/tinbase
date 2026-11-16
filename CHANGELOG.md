@@ -6,6 +6,15 @@ All notable changes to tinbase are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The first REST request on a schema with many foreign keys no longer stalls for minutes on PGlite.
+  Schema introspection listed foreign keys through `information_schema` (table_constraints ×
+  referential_constraints × key_column_usage twice), which PGlite plans badly: 134 foreign keys took
+  90 s, and a browser tab running PGlite on its main thread froze for all of it. PGlite and native
+  Postgres now read the same rows from `pg_catalog` (~15 ms for those 134); pg-mem, which has no
+  `pg_constraint` key arrays, keeps the `information_schema` listing.
+
 ## [0.23.0]
 
 ### Added
