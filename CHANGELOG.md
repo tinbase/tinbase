@@ -6,6 +6,8 @@ All notable changes to tinbase are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.23.1]
+
 ### Fixed
 
 - The first REST request on a schema with many foreign keys no longer stalls for minutes on PGlite.
