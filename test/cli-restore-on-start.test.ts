@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync }
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { freePort, freshFetch } from './helpers.js'
 
 /**
  * `tinbase start` restores an export left at .tinbase/restore.tar.gz before it
@@ -48,7 +49,7 @@ function start(dir: string, port: number): Promise<string> {
     const poll = async () => {
       for (let i = 0; i < 120; i++) {
         try {
-          if ((await fetch(`http://127.0.0.1:${port}/rest/v1/`)).status > 0) return resolve(out)
+          if ((await freshFetch(`http://127.0.0.1:${port}/rest/v1/`)).status > 0) return resolve(out)
         } catch {
           // not up yet
         }
@@ -73,13 +74,13 @@ describe.skipIf(!BUILT || !NATIVE_SUPPORTED)('start restores .tinbase/restore.ta
     rmSync(join(dir, '.tinbase', 'pgdata'), { recursive: true, force: true })
     renameSync(archive, join(dir, '.tinbase', 'restore.tar.gz'))
 
-    const port = 54500 + Math.floor(process.pid % 200)
+    const port = await freePort()
     const out = await start(dir, port)
     expect(out).toContain('restored')
     expect(existsSync(join(dir, '.tinbase', 'restore.tar.gz'))).toBe(false)
 
     const serviceRole = run(dir, 'keys').trim().split('\n').pop()!.trim()
-    const res = await fetch(`http://127.0.0.1:${port}/rest/v1/notes?select=body`, {
+    const res = await freshFetch(`http://127.0.0.1:${port}/rest/v1/notes?select=body`, {
       headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
     })
     expect(await res.json()).toEqual([{ body: 'seed' }])
@@ -89,7 +90,7 @@ describe.skipIf(!BUILT || !NATIVE_SUPPORTED)('start restores .tinbase/restore.ta
     const dir = project()
     mkdirSync(join(dir, '.tinbase'), { recursive: true })
     writeFileSync(join(dir, '.tinbase', 'restore.tar.gz'), 'not an archive')
-    const port = 54700 + Math.floor(process.pid % 200)
+    const port = await freePort()
     const err = (await start(dir, port).then(
       () => null,
       (e) => e

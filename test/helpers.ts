@@ -110,3 +110,38 @@ export async function createTestEnv(): Promise<TestEnv> {
 
   return { backend, supabase, admin, close: () => backend.close() }
 }
+
+/**
+ * A port nothing is listening on, from the OS (bind to 0, read it, close).
+ *
+ * The CLI tests used to guess one from the worker's pid (`54300 + pid % 200`). On a machine already
+ * running a tinbase (54321, 54322, ...) or with another test file's guess landing on the same number,
+ * `tinbase start` moved to the next free port, while the test kept talking to the guessed one, i.e. to
+ * somebody else's server, and failed with ECONNRESET when that server went away.
+ */
+export async function freePort(): Promise<number> {
+  const { createServer } = await import('node:net')
+  return await new Promise((resolve, reject) => {
+    const srv = createServer()
+    srv.unref()
+    srv.on('error', reject)
+    srv.listen(0, '127.0.0.1', () => {
+      const { port } = srv.address() as { port: number }
+      srv.close(() => resolve(port))
+    })
+  })
+}
+
+/**
+ * fetch on a new connection every time (`Connection: close`).
+ *
+ * The CLI tests run commands with execFileSync between requests, which blocks this process's event
+ * loop for as long as the command runs (3-6 s on a busy Mac). The server closes an idle keep-alive
+ * connection after 5 s; with the loop blocked, the client never sees that close and its next request
+ * reuses the dead connection: ECONNRESET, while the server is perfectly healthy.
+ */
+export function freshFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers)
+  headers.set('connection', 'close')
+  return fetch(url, { ...init, headers })
+}

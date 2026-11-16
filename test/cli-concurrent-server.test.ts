@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { freePort, freshFetch } from './helpers.js'
 
 /**
  * Commands run against a project whose server is already up.
@@ -46,7 +47,7 @@ function runExpectingFailure(...args: string[]): string {
 async function waitForServer(): Promise<boolean> {
   for (let i = 0; i < 120; i++) {
     try {
-      const res = await fetch(`http://127.0.0.1:${port}/rest/v1/`)
+      const res = await freshFetch(`http://127.0.0.1:${port}/rest/v1/`)
       if (res.status > 0) return true
     } catch {
       // not up yet
@@ -63,7 +64,7 @@ describe.skipIf(!BUILT || !NATIVE_SUPPORTED)('cli against a running server', () 
     writeFileSync(join(dir, 'supabase', 'migrations', '001_init.sql'), 'create table notes (id serial primary key, body text);')
     run('migrate')
 
-    port = 54300 + Math.floor(process.pid % 200)
+    port = await freePort()
     server = spawn('node', [CLI, 'start', '--dir', dir, '--engine', 'native', '--port', String(port)], {
       stdio: 'ignore',
     })
@@ -86,7 +87,7 @@ describe.skipIf(!BUILT || !NATIVE_SUPPORTED)('cli against a running server', () 
     // into the database it is serving, not into a second cluster
     const keys = run('keys')
     const serviceRole = keys.trim().split('\n').pop()!.trim()
-    const res = await fetch(`http://127.0.0.1:${port}/rest/v1/tags?select=*`, {
+    const res = await freshFetch(`http://127.0.0.1:${port}/rest/v1/tags?select=*`, {
       headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
     })
     expect(res.status).toBe(200)
@@ -125,7 +126,7 @@ describe.skipIf(!BUILT || !NATIVE_SUPPORTED)('cli against a running server', () 
   it('the server is still healthy after all of that', { timeout: 120000 }, async () => {
     const keys = run('keys')
     const serviceRole = keys.trim().split('\n').pop()!.trim()
-    const res = await fetch(`http://127.0.0.1:${port}/rest/v1/notes?select=*`, {
+    const res = await freshFetch(`http://127.0.0.1:${port}/rest/v1/notes?select=*`, {
       headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
     })
     expect(res.status).toBe(200)

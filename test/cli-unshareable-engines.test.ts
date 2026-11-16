@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { freePort, freshFetch } from './helpers.js'
 
 /**
  * The wasm and pgmem engines cannot be opened by a second process - PGlite runs
@@ -52,13 +53,13 @@ for (const engine of ['wasm', 'pgmem'] as const) {
       mkdirSync(join(dir, 'supabase', 'migrations'), { recursive: true })
       writeFileSync(join(dir, 'supabase', 'migrations', '001_init.sql'), 'create table notes (id text primary key);')
 
-      port = 54500 + (engine === 'wasm' ? 1 : 2) + (process.pid % 50)
+      port = await freePort()
       server = spawn('node', [CLI, 'start', '--dir', dir, '--engine', engine, '--port', String(port)], {
         stdio: 'ignore',
       })
       for (let i = 0; i < 120; i++) {
         try {
-          const res = await fetch(`http://127.0.0.1:${port}/rest/v1/`)
+          const res = await freshFetch(`http://127.0.0.1:${port}/rest/v1/`)
           if (res.status > 0) break
         } catch {
           // not up yet
@@ -87,7 +88,7 @@ for (const engine of ['wasm', 'pgmem'] as const) {
       // point: previously the migration went to a database nobody was serving.
       const keys = ok(dir, engine, 'keys')
       const serviceRole = keys.trim().split('\n').pop()!.trim()
-      const res = await fetch(`http://127.0.0.1:${port}/rest/v1/tags?select=*`, {
+      const res = await freshFetch(`http://127.0.0.1:${port}/rest/v1/tags?select=*`, {
         headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
       })
       expect(res.status).toBe(200)
@@ -115,7 +116,7 @@ for (const engine of ['wasm', 'pgmem'] as const) {
     })
 
     it('leaves the running server serving', { timeout: 120000 }, async () => {
-      const res = await fetch(`http://127.0.0.1:${port}/rest/v1/`)
+      const res = await freshFetch(`http://127.0.0.1:${port}/rest/v1/`)
       expect(res.status).toBeGreaterThan(0)
     })
   })
