@@ -12,8 +12,10 @@ afterEach(async () => {
   while (backends.length) await backends.pop()!.close()
 })
 
+// Each test boots two or three databases: 2-10 s alone, 20-30 s while the full suite boots others
+// on every worker. A 20 s limit (below vitest.config's 30 s default) failed `npm publish` for 0.23.1.
 describe('tinbase db pull', () => {
-  it('writes the schema delta as a migration and records it as applied', { timeout: 30000 }, async () => {
+  it('writes the schema delta as a migration and records it as applied', { timeout: 120_000 }, async () => {
     const dir = await mkdtemp(join(tmpdir(), 'tinbase-pull-'))
     const dataDir = join(dir, 'db')
     const migrationsDir = join(dir, 'migrations')
@@ -54,7 +56,7 @@ describe('tinbase db pull', () => {
     expect(info.some((t) => t.table === 'comments')).toBe(true)
   })
 
-  it('reports "no changes" when the schema matches the migrations', { timeout: 20000 }, async () => {
+  it('reports "no changes" when the schema matches the migrations', { timeout: 120_000 }, async () => {
     const migrations = [{ name: '20240101000000_base', sql: BASE }]
     const live = await createBackend({ migrations })
     backends.push(live)
@@ -67,7 +69,7 @@ describe('tinbase db pull', () => {
 })
 
 describe('tinbase inspect', () => {
-  it('reports row counts and sizes per table', { timeout: 20000 }, async () => {
+  it('reports row counts and sizes per table', { timeout: 120_000 }, async () => {
     const backend = await createBackend({
       migrations: [{ name: '20240101000000_base', sql: BASE }],
     })
