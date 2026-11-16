@@ -24,8 +24,10 @@ async function diff(shadow: TinbaseBackend, live: TinbaseBackend): Promise<strin
   return diffSchemas(a, b, 'public')
 }
 
+// Each test boots two or three databases: 2-10 s alone, 20-30 s while the full suite boots others
+// on every worker. A 20 s limit (below vitest.config's 30 s default) failed `npm publish` for 0.23.1.
 describe('db diff', () => {
-  it('detects a new table', { timeout: 20000 }, async () => {
+  it('detects a new table', { timeout: 120_000 }, async () => {
     const shadow = await boot(BASE)
     const live = await boot(BASE)
     await live.db.query(`create table comments (id serial primary key, body text not null)`)
@@ -34,7 +36,7 @@ describe('db diff', () => {
     expect(ddl.join('\n')).toMatch(/"?body"? text not null/)
   })
 
-  it('detects an added column with default and nullability', { timeout: 20000 }, async () => {
+  it('detects an added column with default and nullability', { timeout: 120_000 }, async () => {
     const shadow = await boot(BASE)
     const live = await boot(BASE)
     await live.db.query(`alter table posts add column views int not null default 0`)
@@ -42,7 +44,7 @@ describe('db diff', () => {
     expect(ddl.join('\n')).toMatch(/add column "?views"? .*not null default 0/i)
   })
 
-  it('detects dropped column, type change, and nullability change', { timeout: 20000 }, async () => {
+  it('detects dropped column, type change, and nullability change', { timeout: 120_000 }, async () => {
     const shadow = await boot(BASE)
     const live = await boot(BASE)
     await live.db.query(`alter table posts drop column title`)
@@ -52,7 +54,7 @@ describe('db diff', () => {
     expect(ddl).toMatch(/alter column "?name"? drop not null/i)
   })
 
-  it('detects new index and foreign key', { timeout: 20000 }, async () => {
+  it('detects new index and foreign key', { timeout: 120_000 }, async () => {
     const shadow = await boot(BASE)
     const live = await boot(BASE)
     await live.db.query(`alter table posts add column author_id int`)
@@ -63,13 +65,13 @@ describe('db diff', () => {
     expect(ddl).toContain('posts_title_idx')
   })
 
-  it('no changes → empty diff', { timeout: 20000 }, async () => {
+  it('no changes → empty diff', { timeout: 120_000 }, async () => {
     const shadow = await boot(BASE)
     const live = await boot(BASE)
     expect(await diff(shadow, live)).toEqual([])
   })
 
-  it('generated DDL is replayable: applying it to shadow reproduces live', { timeout: 20000 }, async () => {
+  it('generated DDL is replayable: applying it to shadow reproduces live', { timeout: 120_000 }, async () => {
     const shadow = await boot(BASE)
     const live = await boot(BASE)
     await live.db.query(`create type kind as enum ('a','b')`)
