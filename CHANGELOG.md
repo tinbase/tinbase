@@ -6,6 +6,14 @@ All notable changes to tinbase are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `--engine pgmem`: REST writes (insert, update, filters) to int, smallint, bigint, numeric, real,
+  double, varchar and char columns work. The REST layer casts with the column's quoted `udt_name`
+  (`'9.5'::"numeric"`), which pg-mem could not resolve. The `pg-mem` engine moves from
+  `@tinbase/pg-mem` ^3.4.0 to ^4.0.7, which also keeps column defaults through BEFORE INSERT
+  triggers (4.0.6).
+
 ## [0.23.1]
 
 ### Fixed
