@@ -6,6 +6,8 @@ All notable changes to tinbase are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.23.2]
+
 ### Fixed
 
 - `--engine pgmem`: REST writes (insert, update, filters) to int, smallint, bigint, numeric, real,
