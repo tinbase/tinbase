@@ -6,6 +6,15 @@ All notable changes to tinbase are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- REST: calling a VOLATILE function (the default) no longer drops the schema, function and RLS
+  caches unless the call changed the schema. Every RPC used to make the next REST request
+  re-introspect the whole schema: ~42 s for a one-row select after an RPC on a 649-migration
+  app. An event trigger now bumps `tinbase.ddl_epoch` when DDL changes something (trigger
+  commands and `if not exists` no-ops don't count), and the caches are dropped only when it
+  moved. Engines without event triggers (pg-mem) keep the old behaviour.
+
 ## [0.23.2]
 
 ### Fixed

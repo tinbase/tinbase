@@ -153,6 +153,33 @@ export const FK_SQL_INFORMATION_SCHEMA = `select
    and (tc.table_schema = $1 or tgt.table_schema = $1)
  order by tc.constraint_name, src.ordinal_position`
 
+/**
+ * DDL epoch: a sequence an event trigger bumps after every DDL command that changed something, so a
+ * caller can tell whether
+ * something it ran changed the schema without re-introspecting. Trigger commands don't count: they
+ * don't change what REST serves, and realtime installs its CDC triggers while requests are flowing.
+ * Sequences aren't transactional, so a rolled-back DDL still bumps it (a spare refresh, never a stale
+ * cache). Needs a superuser (event triggers); where it can't be installed (pg-mem, a restricted role)
+ * callers fall back to dropping the caches every time.
+ */
+const DDL_EPOCH_SQL = `
+create schema if not exists tinbase;
+create sequence if not exists tinbase.ddl_epoch;
+create or replace function tinbase.bump_ddl_epoch() returns event_trigger
+language plpgsql as $$
+begin
+  -- (no commands collected: an \`if not exists\` that found the object, which changed nothing)
+  if tg_tag not in ('CREATE TRIGGER', 'ALTER TRIGGER', 'DROP TRIGGER')
+     and exists (select from pg_event_trigger_ddl_commands()) then
+    perform nextval('tinbase.ddl_epoch');
+  end if;
+end $$;
+do $$ begin
+  if not exists (select from pg_event_trigger where evtname = 'tinbase_ddl_epoch') then
+    create event trigger tinbase_ddl_epoch on ddl_command_end execute function tinbase.bump_ddl_epoch();
+  end if;
+end $$;`
+
 export class Database {
   private schemaCache = new Map<string, SchemaInfo>()
   private fnCache = new Map<string, FunctionInfo[]>()
@@ -164,6 +191,11 @@ export class Database {
    * (which skips unsupported migrations with a warning instead).
    */
   migrationFailure: MigrationFailure | null = null
+
+  /** Whether this engine has the DDL epoch (event triggers); see DDL_EPOCH_SQL. */
+  private ddlTracked = false
+  /** The DDL epoch read before the current caches were built; undefined while they're empty. */
+  private cacheEpoch: string | undefined
 
   private constructor(
     public engine: DbEngine,
@@ -196,7 +228,17 @@ export class Database {
       // Seed snapshot bookkeeping is advisory: it must never stop a database from opening.
       await initSnapshot(engine).catch((e) => console.warn(`  seed snapshot: ${(e as Error)?.message ?? e}`))
     }
-    return new Database(engine, opts?.vaultKey)
+    const db = new Database(engine, opts?.vaultKey)
+    if (!engine.minimalBootstrap) {
+      try {
+        await engine.exec(DDL_EPOCH_SQL)
+        await db.readDdlEpoch()
+        db.ddlTracked = true
+      } catch {
+        // no event triggers here: invalidateIfSchemaChanged always drops the caches
+      }
+    }
+    return db
   }
 
   /**
@@ -416,6 +458,46 @@ export class Database {
     this.schemaCache.clear()
     this.fnCache.clear()
     this.rlsCache.clear()
+    this.cacheEpoch = undefined
+  }
+
+  /**
+   * On a cache miss, before introspecting: note the DDL epoch the caches are being built against
+   * (read first, so DDL that lands during the introspection counts as a change, never as cached).
+   */
+  private async noteCacheEpoch(): Promise<void> {
+    if (!this.ddlTracked || this.cacheEpoch !== undefined) return
+    try {
+      this.cacheEpoch = await this.readDdlEpoch()
+    } catch {
+      this.ddlTracked = false
+    }
+  }
+
+  private async readDdlEpoch(): Promise<string> {
+    const res = await this.engine.query<{ v: string }>(
+      `select last_value::text || ':' || is_called::text as v from tinbase.ddl_epoch`
+    )
+    return res.rows[0].v
+  }
+
+  /**
+   * After something that MAY have run DDL (a VOLATILE RPC): drop the introspection caches only when
+   * the schema did change. Dropping them on every call made each RPC cost the next REST request a full
+   * re-introspection: ~40 s on a 649-migration schema (RingCode, 2026-11-19). Engines without the DDL
+   * epoch drop them every time, as before.
+   */
+  async invalidateIfSchemaChanged(): Promise<void> {
+    if (!this.ddlTracked) return this.invalidateSchemaCache()
+    // nothing cached: nothing can be stale
+    if (this.cacheEpoch === undefined) return
+    let now: string
+    try {
+      now = await this.readDdlEpoch()
+    } catch {
+      return this.invalidateSchemaCache()
+    }
+    if (now !== this.cacheEpoch) this.invalidateSchemaCache()
   }
 
   private rlsCache = new Map<string, Set<string>>()
@@ -424,6 +506,7 @@ export class Database {
   async getRlsTables(schema: string): Promise<Set<string>> {
     const cached = this.rlsCache.get(schema)
     if (cached) return cached
+    await this.noteCacheEpoch()
     const res = await this.engine.query<{ relname: string }>(
       `select c.relname from pg_class c
        join pg_namespace n on n.oid = c.relnamespace
@@ -439,6 +522,7 @@ export class Database {
   async getSchemaInfo(schema: string): Promise<SchemaInfo> {
     const cached = this.schemaCache.get(schema)
     if (cached) return cached
+    await this.noteCacheEpoch()
 
     const cols = await this.engine.query<{
       table_name: string
@@ -563,6 +647,7 @@ export class Database {
     const key = `${schema}.${name}`
     const cached = this.fnCache.get(key)
     if (cached) return cached
+    await this.noteCacheEpoch()
     const res = await this.engine.query<{
       name: string
       returns_set: boolean
