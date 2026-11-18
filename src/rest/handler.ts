@@ -394,12 +394,14 @@ export class RestHandler {
     const call = renderCall(schema, fn, args)
     const q = parseQuery(searchParams)
 
-    // A VOLATILE function may have run DDL (create/alter/drop), so drop the
-    // schema/function caches afterwards - otherwise REST keeps serving a stale
-    // shape until the next migration.
+    // A VOLATILE function may have run DDL (create/alter/drop): refresh the
+    // schema/function caches afterwards if it did - otherwise REST keeps serving
+    // a stale shape until the next migration. Only if it did: functions are
+    // volatile by default, and dropping the caches after every call made each
+    // RPC cost the next request a full re-introspection (database.ts).
     if (fn.volatility === 'v') {
       return await this.runRpc(ctx, fn, call, q, prefer, wantsObject, wantsCsv, schema, method).finally(() =>
-        this.db.invalidateSchemaCache()
+        this.db.invalidateIfSchemaChanged()
       )
     }
     return await this.runRpc(ctx, fn, call, q, prefer, wantsObject, wantsCsv, schema, method)
