@@ -6,6 +6,7 @@ import type { Database } from '../db/database.js'
 import { randomToken, signJwt, verifyJwt, type JwtClaims } from '../jwt.js'
 import { TINBASE_VERSION, type Mailer, type RequestContext, type SmsSender } from '../types.js'
 import { OAuthService, type OAuthProviderConfig } from './oauth.js'
+import { IdTokenError, verifyIdToken } from './id-token.js'
 import { asBcrypt2a, hashPassword, isBcryptHash, verifyPassword } from './password.js'
 import { qrSvgDataUri } from './qr.js'
 import { DEFAULT_AUTH_SETTINGS, type AuthSettings } from './settings.js'
@@ -72,6 +73,12 @@ export interface AuthConfig {
   hookFetch?: typeof fetch
   /** OAuth providers to enable, keyed by provider name (google, github, …) */
   oauthProviders?: Record<string, OAuthProviderConfig>
+  /**
+   * Native sign-in (`signInWithIdToken`): per provider, the client ids an ID
+   * token's `aud` may name - the app's bundle id, Android client id, service id.
+   * `[auth.external.apple] client_id` (comma-separated), as on Supabase.
+   */
+  idTokenClients?: Record<string, string[]>
   /** injectable fetch for the OAuth provider calls (tests use a mock provider) */
   oauthFetch?: typeof fetch
   /**
@@ -370,7 +377,7 @@ export class AuthHandler {
     try {
       if (path === 'health') return json(200, { name: 'tinbase-auth', version: TINBASE_VERSION, description: 'GoTrue-compatible auth' })
       if (path === 'settings') {
-        const providers = Object.keys(this.config.oauthProviders ?? {})
+        const providers = [...new Set([...Object.keys(this.config.oauthProviders ?? {}), ...Object.keys(this.config.idTokenClients ?? {})])]
         return json(200, {
           external: {
             email: true,
@@ -614,7 +621,39 @@ export class AuthHandler {
       return json(200, await this.sessionFor(ures.rows[0] as UserRow))
     }
 
+    if (grantType === 'id_token') return this.idTokenGrant(body)
+
     return authError(400, 'invalid_grant', `unsupported grant_type: ${grantType}`)
+  }
+
+  /**
+   * POST /token?grant_type=id_token - supabase.auth.signInWithIdToken({ provider,
+   * token, nonce }): native Sign in with Apple / Google. The token is checked
+   * against the provider's keys and this project's client ids, then the user is
+   * found or created exactly as the OAuth callback does.
+   */
+  private async idTokenGrant(body: Record<string, string>): Promise<Response> {
+    const provider = String(body.provider ?? '').toLowerCase()
+    const token = body.id_token
+    if (!provider || !token) return authError(400, 'validation_failed', 'provider and id_token required')
+    if (this.settings.disabledProviders.includes(provider)) return authError(400, 'provider_disabled', `Unsupported provider: ${provider} is disabled`)
+    const audiences = this.config.idTokenClients?.[provider] ?? []
+    if (!audiences.length) {
+      return authError(400, 'provider_disabled', `Unsupported provider: ${provider} is not enabled (set [auth.external.${provider}] client_id)`)
+    }
+    let profile
+    try {
+      profile = await verifyIdToken(provider, token, { audiences, nonce: body.nonce || undefined, fetchImpl: this.config.oauthFetch })
+    } catch (e) {
+      if (!(e instanceof IdTokenError)) throw e
+      await this.audit('login_failed', { traits: { grant_type: 'id_token', provider } })
+      return authError(400, 'bad_jwt', e.message)
+    }
+    const userId = await this.oauth.signInWithProfile(provider, profile)
+    const ures = await this.db.query(`select * from auth.users where id = $1`, [userId])
+    const user = ures.rows[0] as UserRow
+    await this.audit('login', { actorId: user.id, actorEmail: user.email, traits: { grant_type: 'id_token', provider } })
+    return json(200, await this.sessionFor(user))
   }
 
   private async getUser(req: Request): Promise<Response> {

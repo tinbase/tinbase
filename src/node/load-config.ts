@@ -13,6 +13,7 @@ import type { OAuthProviderConfig } from '../auth/oauth.js'
 import type { RateLimitRule } from '../auth/rate-limit.js'
 import type { BucketSeed } from '../types.js'
 import { normalizeTestOtp } from '../auth/sms.js'
+import { ID_TOKEN_PROVIDERS } from '../auth/id-token.js'
 import {
   loadConfigToml,
   tableAt,
@@ -61,6 +62,8 @@ export interface AuthConfig {
   sessionInactivitySeconds?: number
   /** OAuth providers from [auth.external.*] and env-var fallbacks */
   oauthProviders: Record<string, OAuthProviderConfig>
+  /** Native ID-token sign-in client ids from [auth.external.*] client_id (comma-separated), secret not needed */
+  idTokenClients: Record<string, string[]>
   /**
    * [auth.email.template.*]: per-type `subject` and `content_path`. The path is
    * recorded, not read - loading files is the CLI's job, since config parsing
@@ -143,7 +146,7 @@ export function loadProjectConfig(projectDir: string, env: NodeJS.ProcessEnv = p
 
 function readAuth(root: ConfigTable, env: NodeJS.ProcessEnv): AuthConfig {
   const auth = tableAt(root, 'auth')
-  const out: AuthConfig = { settings: readAuthSettings(root), oauthProviders: readOAuthProviders(root, env) }
+  const out: AuthConfig = { settings: readAuthSettings(root), oauthProviders: readOAuthProviders(root, env), idTokenClients: readIdTokenClients(root, env) }
 
   const enabled = getBool(auth, 'enabled')
   if (enabled !== undefined) out.enabled = enabled
@@ -370,6 +373,8 @@ function readOAuthProviders(root: ConfigTable, env: NodeJS.ProcessEnv): Record<s
       const secret = getString(t, 'secret')
       if (!enabled || !clientId || !secret) continue
       const url = getString(t, 'url')
+      // Apple has no web OAuth preset here: its block configures native id_token sign-in only (readIdTokenClients)
+      if (name.toLowerCase() === 'apple' && !url && !getString(t, 'authorize_url')) continue
       out[name.toLowerCase()] = {
         clientId,
         clientSecret: secret,
@@ -387,6 +392,39 @@ function readOAuthProviders(root: ConfigTable, env: NodeJS.ProcessEnv): Record<s
 }
 
 /** Collect providers declared via `<prefix><NAME>_CLIENT_ID/_<secretKey>/_ENABLED` env vars. */
+/**
+ * Client ids for native ID-token sign-in, per provider that supports it:
+ *   1. config.toml [auth.external.<provider>] client_id = "com.acme.app,com.acme.web"
+ *      (enabled, no secret needed: the token is checked against the provider's keys)
+ *   2. GOTRUE_EXTERNAL_<PROVIDER>_CLIENT_ID / TINBASE_OAUTH_<PROVIDER>_CLIENT_ID
+ */
+function readIdTokenClients(root: ConfigTable, env: NodeJS.ProcessEnv): Record<string, string[]> {
+  const out: Record<string, string[]> = {}
+  const split = (v: string | undefined) => (v ?? '').split(',').map((s) => s.trim()).filter(Boolean)
+  const external = tableAt(root, 'auth.external')
+  if (external) {
+    for (const [name, t] of external.children) {
+      const p = name.toLowerCase()
+      if (!ID_TOKEN_PROVIDERS.includes(p) || getBool(t, 'enabled') === false) continue
+      const ids = split(getString(t, 'client_id'))
+      if (ids.length) out[p] = ids
+    }
+  }
+  for (const p of ID_TOKEN_PROVIDERS) {
+    if (out[p]) continue
+    for (const prefix of ['GOTRUE_EXTERNAL_', 'TINBASE_OAUTH_']) {
+      const up = p.toUpperCase()
+      const enabled = env[`${prefix}${up}_ENABLED`]
+      const ids = split(env[`${prefix}${up}_CLIENT_ID`])
+      if (ids.length && (enabled === undefined || enabled === 'true')) {
+        out[p] = ids
+        break
+      }
+    }
+  }
+  return out
+}
+
 function collectEnvProviders(
   env: NodeJS.ProcessEnv,
   out: Record<string, OAuthProviderConfig>,

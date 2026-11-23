@@ -6,6 +6,16 @@ All notable changes to tinbase are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Native **Sign in with Apple** (and Google) through `signInWithIdToken({ provider, token, nonce })`,
+  GoTrue's `POST /auth/v1/token?grant_type=id_token`. The token is checked against the provider's
+  published keys (cached, refetched on rotation), its issuer, expiry, audience and nonce, then the user
+  is found or created with the same rules as the OAuth callback (an email is linked only when the
+  provider verified it). Configure with `[auth.external.apple] client_id = "com.acme.app"` (the app's
+  bundle id; comma-separated for several; no secret needed) or `GOTRUE_EXTERNAL_APPLE_CLIENT_ID`. A
+  token issued to another app's client id is refused. `/settings` lists the provider.
+
 ## [0.23.2]
 
 ### Fixed

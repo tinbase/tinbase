@@ -150,6 +150,8 @@ export interface BackendConfig {
   hookFetch?: typeof fetch
   /** OAuth providers, e.g. { google: { clientId, clientSecret } }. Served at /auth/v1/authorize. */
   oauthProviders?: Record<string, import('./auth/oauth.js').OAuthProviderConfig>
+  /** Native ID-token sign-in: per provider, the accepted client ids (`aud`), e.g. { apple: ['com.acme.app'] }. */
+  idTokenClients?: Record<string, string[]>
   /** Injectable fetch for OAuth provider calls (tests point this at a mock provider). */
   oauthFetch?: typeof fetch
   /** Database webhooks: fire HTTP requests on table changes. */

@@ -1098,6 +1098,7 @@ async function main(): Promise<void> {
     authRateLimits: cfg.auth.rateLimits,
     sessionTimeboxSeconds: cfg.auth.sessionTimeboxSeconds,
     oauthProviders: cfg.auth.oauthProviders,
+    idTokenClients: cfg.auth.idTokenClients,
     dbSchemas: cfg.api.schemas,
     maxRows: cfg.api.maxRows,
     storageFileSizeLimit: cfg.storage.fileSizeLimit,
