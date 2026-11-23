@@ -6,6 +6,8 @@ All notable changes to tinbase are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.24.0]
+
 ### Added
 
 - Native **Sign in with Apple** (and Google) through `signInWithIdToken({ provider, token, nonce })`,
