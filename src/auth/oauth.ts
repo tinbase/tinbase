@@ -254,6 +254,14 @@ export class OAuthService {
     return profile
   }
 
+  /**
+   * Sign in from a profile someone else already verified (a native ID token):
+   * the same find-or-create and email-linking rules as the OAuth callback.
+   */
+  signInWithProfile(provider: string, profile: OAuthProfile): Promise<string> {
+    return this.upsertUser(provider, profile)
+  }
+
   private async upsertUser(provider: string, profile: OAuthProfile): Promise<string> {
     // existing identity?
     const existing = await this.db.query<{ user_id: string }>(

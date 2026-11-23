@@ -363,6 +363,7 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
     sendEmailHook: config.sendEmailHook,
     hookFetch: config.hookFetch,
     oauthProviders: config.oauthProviders,
+    idTokenClients: config.idTokenClients,
     oauthFetch: config.oauthFetch,
     uriAllowList: config.uriAllowList,
     enforceRedirectAllowList: isNetworkExposed(config.host),
