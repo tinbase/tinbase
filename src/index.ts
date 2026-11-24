@@ -365,6 +365,8 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
     oauthProviders: config.oauthProviders,
     idTokenClients: config.idTokenClients,
     skipNonceCheck: config.skipNonceCheck,
+    emailOptional: config.emailOptional,
+    allowUnverifiedEmailSignIns: config.allowUnverifiedEmailSignIns,
     iosBundleId: config.iosBundleId,
     oauthFetch: config.oauthFetch,
     uriAllowList: config.uriAllowList,

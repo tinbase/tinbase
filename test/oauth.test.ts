@@ -136,7 +136,7 @@ describe('oauth', () => {
     expect(await off.json()).toEqual({ code: 400, error_code: 'validation_failed', msg: 'Unsupported provider: provider is not enabled' })
   })
 
-  it('does not link an unverified provider email to an existing account', async () => {
+  it('links an unverified provider email under autoconfirm, as Supabase does (DetermineAccountLinking)', async () => {
     // pre-existing password account owns victim@example.com
     const victim = createClient(BASE, backend.anonKey, {
       auth: { persistSession: false, autoRefreshToken: false },
@@ -148,8 +148,9 @@ describe('oauth', () => {
     )
     const victimId = before.rows[0].id
 
-    // a NEW provider identity presents the same email (mock profileMap sets no
-    // emailVerified, i.e. unverified). It must NOT hijack the victim's account.
+    // a NEW provider identity presents the same email, unverified. GoTrue counts every address as verified
+    // when the mailer autoconfirms (tinbase's default, and `supabase start`'s): it links. With
+    // enable_confirmations on it doesn't - see oauth-linking-parity.test.ts.
     PROFILE.id = 'gh_attacker'
     PROFILE.email = 'victim@example.com'
     PROFILE.verified = false
@@ -160,11 +161,10 @@ describe('oauth', () => {
     )
     await driveProvider(authRes.headers.get('location')!)
 
-    // the identity must be linked to a *new* user, never the victim's
     const ident = await backend.db.query<{ user_id: string }>(
       `select user_id from auth.identities where provider = 'github' and provider_id = 'gh_attacker'`
     )
     expect(ident.rows.length).toBe(1)
-    expect(ident.rows[0].user_id).not.toBe(victimId)
+    expect(ident.rows[0].user_id).toBe(victimId)
   })
 })

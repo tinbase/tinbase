@@ -82,6 +82,10 @@ export interface AuthConfig {
   idTokenClients?: Record<string, string[]>
   /** Providers whose ID tokens skip the nonce check ([auth.external.<p>] skip_nonce_check). */
   skipNonceCheck?: string[]
+  /** Providers that may sign in without an email ([auth.external.<p>] email_optional). */
+  emailOptional?: string[]
+  /** GOTRUE_MAILER_ALLOW_UNVERIFIED_EMAIL_SIGN_INS: sign in before confirming an unverified provider email. */
+  allowUnverifiedEmailSignIns?: boolean
   /** GOTRUE_EXTERNAL_IOS_BUNDLE_ID: also accepted as an Apple ID token audience. */
   iosBundleId?: string
   /** injectable fetch for the OAuth provider calls (tests use a mock provider) */
@@ -284,7 +288,21 @@ export class AuthHandler {
       config.oauthFetch ?? fetch,
       config.uriAllowList,
       config.enforceRedirectAllowList,
-      () => this.settings
+      {
+        settings: () => this.settings,
+        allowUnverifiedEmailSignIns: config.allowUnverifiedEmailSignIns ?? false,
+        emailOptional: config.emailOptional ?? [],
+        confirmationTooSoon: async (email) => {
+          const res = await this.limitEmailFrequency(email, 'confirmation_sent_at')
+          if (!res) return null
+          const body = (await res.json()) as { error_code: string; msg: string }
+          return new AuthHttpError(res.status, body.error_code, body.msg)
+        },
+        sendConfirmation: async (email, redirectTo) => {
+          await this.issueToken(email, 'otp', false, { flavor: 'confirm', redirectTo })
+        },
+        audit: (action, actor, traits, type) => this.audit(action, { actorId: actor.id, actorEmail: actor.email, traits, type }),
+      }
     )
     this.settings = config.settings ?? { ...DEFAULT_AUTH_SETTINGS }
     this.rateLimiter = config.rateLimiter === undefined ? new RateLimiter() : config.rateLimiter
@@ -419,6 +437,8 @@ export class AuthHandler {
       if (path === 'token' && method === 'POST') return this.limit('token', req) ?? (await this.token(req, url))
       if (path === 'user' && method === 'GET') return await this.getUser(req)
       if (path === 'user' && method === 'PUT') return await this.updateUser(req, url)
+      if (path === 'user/identities/authorize' && method === 'GET') return await this.linkIdentityAuthorize(req, url)
+      if (path.startsWith('user/identities/') && method === 'DELETE') return await this.unlinkIdentity(req, path.slice('user/identities/'.length))
       if (path === 'logout' && method === 'POST') return await this.logout(req)
       // /otp, /magiclink and /resend pick their limit (`otp` for mail, `sms`
       // for a text) once the body says which, so they are rate-limited inside.
@@ -440,11 +460,8 @@ export class AuthHandler {
         return await this.unenrollFactor(req, path.split('/')[1])
       if (path === 'authorize' && method === 'GET') {
         // GoTrue's GetExternalProviderRedirectURL: an unknown or disabled provider is a 400, not a redirect
-        const provider = url.searchParams.get('provider') ?? ''
-        if (!this.oauth.has(provider) || this.settings.disabledProviders.includes(provider)) {
-          const known = GOTRUE_EXTERNAL_PROVIDERS.includes(provider) || this.oauth.has(provider)
-          return authError(400, 'validation_failed', known ? 'Unsupported provider: provider is not enabled' : `Unsupported provider: Provider ${provider} could not be found`)
-        }
+        const refused = this.unsupportedProvider(url.searchParams.get('provider') ?? '')
+        if (refused) return refused
         return await this.oauth.authorize(url)
       }
       if (path === 'callback' && (method === 'GET' || method === 'POST')) {
@@ -721,8 +738,48 @@ export class AuthHandler {
     }
     const ures = await this.db.query(`select * from auth.users where id = $1`, [userId])
     const user = ures.rows[0] as UserRow
-    await this.audit('login', { actorId: user.id, actorEmail: user.email, traits: { grant_type: 'id_token', provider } })
     return json(200, await this.sessionFor(user))
+  }
+
+  /**
+   * GET /user/identities/authorize - supabase.auth.linkIdentity({ provider }): GoTrue's LinkIdentity. The
+   * signed-in user goes through the provider's OAuth flow and the identity is added to them on the callback.
+   * Needs [auth] enable_manual_linking; skip_http_redirect=true answers `{ url }` instead of redirecting.
+   */
+  private async linkIdentityAuthorize(req: Request, url: URL): Promise<Response> {
+    const user = await this.userFromBearer(req)
+    if (!user) return authError(401, 'no_authorization', 'Invalid or expired token')
+    if (!this.settings.manualLinking) return authError(404, 'manual_linking_disabled', 'Manual linking is disabled')
+    const provider = url.searchParams.get('provider') ?? ''
+    const refused = this.unsupportedProvider(provider)
+    if (refused) return refused
+    const target = await this.oauth.authorizeUrl(url, user.id)
+    if (url.searchParams.get('skip_http_redirect') === 'true') return json(200, { url: target })
+    return new Response(null, { status: 302, headers: { location: target } })
+  }
+
+  /** DELETE /user/identities/{id} - supabase.auth.unlinkIdentity(identity): GoTrue's DeleteIdentity. */
+  private async unlinkIdentity(req: Request, identityId: string): Promise<Response> {
+    const user = await this.userFromBearer(req)
+    if (!user) return authError(401, 'no_authorization', 'Invalid or expired token')
+    if (!this.settings.manualLinking) return authError(404, 'manual_linking_disabled', 'Manual linking is disabled')
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identityId)) {
+      return authError(404, 'validation_failed', 'identity_id must be an UUID')
+    }
+    try {
+      await this.oauth.unlinkIdentity(user.id, identityId.toLowerCase())
+    } catch (e) {
+      if (e instanceof AuthHttpError) return authError(e.status, e.code, e.message)
+      throw e
+    }
+    return json(200, {})
+  }
+
+  /** GoTrue's Provider() lookup for an OAuth redirect: an unknown or disabled provider is a 400. */
+  private unsupportedProvider(provider: string): Response | null {
+    if (this.oauth.has(provider) && !this.settings.disabledProviders.includes(provider)) return null
+    const known = GOTRUE_EXTERNAL_PROVIDERS.includes(provider) || this.oauth.has(provider)
+    return authError(400, 'validation_failed', known ? 'Unsupported provider: provider is not enabled' : `Unsupported provider: Provider ${provider} could not be found`)
   }
 
   private async getUser(req: Request): Promise<Response> {

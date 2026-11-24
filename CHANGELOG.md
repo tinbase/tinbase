@@ -33,9 +33,34 @@ All notable changes to tinbase are documented here. The format follows
     disabled provider with a 400 instead of a redirect.
   - `/settings` lists every provider GoTrue knows (`false` unless enabled), plus `saml_enabled` /
     `passkeys_enabled`.
+  - Account linking is GoTrue's DetermineAccountLinking: an identity seen before signs in to its user; a
+    verified address links to the one user who has it (as an identity's email or the user's), several is
+    a 500; with the mailer autoconfirming (the default, as `supabase start`), every address counts as
+    verified, as on Supabase.
+  - Unverified provider emails (`[auth.email] enable_confirmations = true`): the user is created with the
+    address unconfirmed (or without it when another user has it), mailed a confirmation, and refused with
+    422 `provider_email_needs_verification`; `GOTRUE_MAILER_ALLOW_UNVERIFIED_EMAIL_SIGN_INS=true` lets them
+    in unconfirmed. An unconfirmed account signed into with a provider loses its password and its other
+    identities (RemoveUnconfirmedIdentities); confirming sets `email_verified` in `user_metadata`.
+  - `[auth.external.<p>] email_optional`; without it a provider that returns no email is refused with
+    "Error getting user email from external provider".
+  - Linking (`link_identity`) to a user without an email takes the identity's email (verified first, never
+    one another user has: 400 `email_exists`), confirms it, and ends an anonymous user's anonymity; an
+    unverified one is mailed and refused with 422 `email_not_confirmed`.
+  - **`linkIdentity` and `unlinkIdentity`**: `GET /user/identities/authorize` (the OAuth round trip, with
+    `skip_http_redirect`) and `DELETE /user/identities/{id}`, behind `[auth] enable_manual_linking`
+    (off by default: 404 `manual_linking_disabled`), with GoTrue's errors (`single_identity_not_deletable`,
+    `identity_not_found`, `email_conflict_identity_not_deletable`).
+  - GitHub's profile reads `/user/emails` (the primary address, each with its verified flag) and asks for
+    `user:email`; Google's comes from the token response's `id_token` (userinfo/v2 only without one) with
+    the Workspace `hd` in `custom_claims`; both store GoTrue's identity data. `/authorize` passes the
+    request's other query parameters on to the provider (never `client_id`, `redirect_uri`, `state`…).
+  - Audit entries for these sign-ins are GoTrue's: `login`, `user_signedup`, `identity_linked`,
+    `identity_unlinked`.
 - OAuth sessions carry the provider's own tokens, as on Supabase: `provider_token` and
   `provider_refresh_token` in the implicit redirect and in the `grant_type=pkce` exchange (stored on
-  `auth.flow_state` until the exchange; two columns added to existing databases).
+  `auth.flow_state` until the exchange; three columns, with `linking_target_id`, added to existing
+  databases).
 
 ## [0.24.0]
 

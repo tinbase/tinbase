@@ -70,6 +70,8 @@ const PRESETS: Record<string, IdTokenPreset> = {
         }),
         email_verified: truthy(c.email_verified),
         phone_verified: false,
+        // parseGoogleIDToken: a Workspace account's hosted domain
+        ...(str(c.hd) ? { custom_claims: { hd: c.hd } } : {}),
       }
       return { id: String(c.sub), email: str(c.email), emailVerified: truthy(c.email_verified), name: str(c.name), identityData }
     },

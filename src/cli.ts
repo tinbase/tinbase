@@ -1100,6 +1100,8 @@ async function main(): Promise<void> {
     oauthProviders: cfg.auth.oauthProviders,
     idTokenClients: cfg.auth.idTokenClients,
     skipNonceCheck: cfg.auth.skipNonceCheck,
+    emailOptional: cfg.auth.emailOptional,
+    allowUnverifiedEmailSignIns: cfg.auth.allowUnverifiedEmailSignIns,
     iosBundleId: cfg.auth.iosBundleId,
     dbSchemas: cfg.api.schemas,
     maxRows: cfg.api.maxRows,
