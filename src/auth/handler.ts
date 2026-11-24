@@ -424,7 +424,12 @@ export class AuthHandler {
         return await this.oauth.authorize(url)
       }
       if (path === 'callback' && (method === 'GET' || method === 'POST')) {
-        return await this.oauth.callback(url, (userId) => this.sessionTokensFor(userId))
+        // Apple answers with a POSTed form (response_mode=form_post); its fields win over the query string.
+        const params = new URLSearchParams(url.searchParams)
+        if (method === 'POST' && /application\/x-www-form-urlencoded/i.test(req.headers.get('content-type') ?? '')) {
+          for (const [k, v] of new URLSearchParams(await req.text())) params.set(k, v)
+        }
+        return await this.oauth.callback(params, (userId) => this.sessionTokensFor(userId))
       }
       if (path.startsWith('admin/')) return await this.admin(req, ctx, path, method)
       return authError(404, 'not_found', `unknown auth endpoint: ${path}`)
@@ -615,10 +620,14 @@ export class AuthHandler {
       const authCode = body.auth_code
       const verifier = body.code_verifier
       if (!authCode || !verifier) return authError(400, 'validation_failed', 'auth_code and code_verifier required')
-      const userId = await this.oauth.exchangePkce(authCode, verifier)
-      if (!userId) return authError(403, 'flow_state_not_found', 'invalid or expired auth code')
-      const ures = await this.db.query(`select * from auth.users where id = $1`, [userId])
-      return json(200, await this.sessionFor(ures.rows[0] as UserRow))
+      const exchanged = await this.oauth.exchangePkce(authCode, verifier)
+      if (!exchanged) return authError(403, 'flow_state_not_found', 'invalid or expired auth code')
+      const ures = await this.db.query(`select * from auth.users where id = $1`, [exchanged.userId])
+      const session = await this.sessionFor(ures.rows[0] as UserRow)
+      // GoTrue: after an OAuth sign-in the session carries the provider's own tokens
+      if (exchanged.providerToken) session.provider_token = exchanged.providerToken
+      if (exchanged.providerRefreshToken) session.provider_refresh_token = exchanged.providerRefreshToken
+      return json(200, session)
     }
 
     if (grantType === 'id_token') return this.idTokenGrant(body)

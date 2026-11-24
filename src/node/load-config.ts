@@ -373,8 +373,6 @@ function readOAuthProviders(root: ConfigTable, env: NodeJS.ProcessEnv): Record<s
       const secret = getString(t, 'secret')
       if (!enabled || !clientId || !secret) continue
       const url = getString(t, 'url')
-      // Apple has no web OAuth preset here: its block configures native id_token sign-in only (readIdTokenClients)
-      if (name.toLowerCase() === 'apple' && !url && !getString(t, 'authorize_url')) continue
       out[name.toLowerCase()] = {
         clientId,
         clientSecret: secret,

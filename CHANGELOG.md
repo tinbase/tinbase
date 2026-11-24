@@ -6,6 +6,19 @@ All notable changes to tinbase are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Sign in with Apple on the web**, as GoTrue's apple provider: `signInWithOAuth({ provider: 'apple' })` goes to
+  Apple's authorize page with `response_mode=form_post` and the scopes `email name`; Apple's POSTed callback
+  is read (form body); the profile is the verified `id_token` from the token response (Apple has no userinfo
+  endpoint), and the name Apple sends once, in the `user` field, becomes `full_name`. Configure it as on
+  Supabase: `[auth.external.apple] client_id = "<Services ID>,<bundle id>"` (the web flow uses the first,
+  native sign-in accepts them all) and `secret = "<client-secret JWT>"`. A cancel at Apple returns to the
+  app as `#error=user_cancelled_authorize`.
+- OAuth sessions carry the provider's own tokens, as on Supabase: `provider_token` and
+  `provider_refresh_token` in the implicit redirect and in the `grant_type=pkce` exchange (stored on
+  `auth.flow_state` until the exchange; two columns added to existing databases).
+
 ## [0.24.0]
 
 ### Added

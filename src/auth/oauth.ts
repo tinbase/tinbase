@@ -12,6 +12,7 @@
  */
 import type { Database } from '../db/database.js'
 import { randomToken } from '../jwt.js'
+import { verifyIdToken } from './id-token.js'
 import { resolveRedirect } from './redirect.js'
 
 /** Operator-supplied config for one OAuth provider. Endpoint URLs are optional for presets (google, github). */
@@ -30,6 +31,20 @@ export interface OAuthProviderConfig {
   scopes?: string
   /** Map the provider's raw userinfo JSON to a normalized profile. */
   profileMap?: (raw: any) => OAuthProfile
+  /**
+   * The profile comes from the `id_token` in the token response (verified against the provider's keys),
+   * not from a userinfo endpoint: Apple has none. Set by the apple preset.
+   */
+  idTokenProfile?: string
+  /** Extra query parameters on the authorize URL (Apple: response_mode=form_post). Set by presets. */
+  authorizeParams?: Record<string, string>
+}
+
+/** What the provider's token endpoint returned: handed back to the app as provider_token / provider_refresh_token. */
+export interface ProviderTokens {
+  accessToken: string
+  refreshToken: string | null
+  idToken: string | null
 }
 
 /** Normalized profile extracted from a provider's userinfo response. */
@@ -46,9 +61,12 @@ export interface OAuthProfile {
   metadata?: Record<string, unknown>
 }
 
-interface ResolvedProvider extends Required<Omit<OAuthProviderConfig, 'profileMap'>> {
+interface ResolvedProvider extends Required<Omit<OAuthProviderConfig, 'profileMap' | 'idTokenProfile' | 'authorizeParams' | 'userInfoUrl'>> {
   name: string
+  userInfoUrl: string | null
   profileMap: (raw: any) => OAuthProfile
+  idTokenProfile: string | null
+  authorizeParams: Record<string, string>
 }
 
 const PRESETS: Record<string, Partial<OAuthProviderConfig>> = {
@@ -64,6 +82,17 @@ const PRESETS: Record<string, Partial<OAuthProviderConfig>> = {
       name: r.name,
       metadata: { avatar_url: r.picture, full_name: r.name },
     }),
+  },
+  // Sign in with Apple on the web, as GoTrue's apple provider: Apple POSTs the result back to the callback
+  // (form_post, required once name or email is asked for), and has no userinfo endpoint, so the profile is
+  // the id_token from the token response. `secret` is the client-secret JWT signed with the Sign in with
+  // Apple key, exactly as Supabase's [auth.external.apple] secret.
+  apple: {
+    authorizeUrl: 'https://appleid.apple.com/auth/authorize',
+    tokenUrl: 'https://appleid.apple.com/auth/token',
+    scopes: 'email name',
+    idTokenProfile: 'apple',
+    authorizeParams: { response_mode: 'form_post' },
   },
   github: {
     authorizeUrl: 'https://github.com/login/oauth/authorize',
@@ -84,19 +113,24 @@ export function resolveProvider(name: string, cfg: OAuthProviderConfig): Resolve
   const preset = PRESETS[name] ?? {}
   const authorizeUrl = cfg.authorizeUrl ?? preset.authorizeUrl
   const tokenUrl = cfg.tokenUrl ?? preset.tokenUrl
-  const userInfoUrl = cfg.userInfoUrl ?? preset.userInfoUrl
-  if (!authorizeUrl || !tokenUrl || !userInfoUrl) {
+  const userInfoUrl = cfg.userInfoUrl ?? preset.userInfoUrl ?? null
+  const idTokenProfile = cfg.idTokenProfile ?? preset.idTokenProfile ?? null
+  if (!authorizeUrl || !tokenUrl || (!userInfoUrl && !idTokenProfile)) {
     throw new Error(`OAuth provider "${name}" needs authorizeUrl/tokenUrl/userInfoUrl (no preset available)`)
   }
   return {
     name,
-    clientId: cfg.clientId,
+    // GoTrue takes a comma-separated list (bundle ids for native sign-in, the Services ID for the web);
+    // the web flow uses the first.
+    clientId: cfg.clientId.split(',')[0].trim(),
     clientSecret: cfg.clientSecret,
     authorizeUrl,
     tokenUrl,
     userInfoUrl,
     scopes: cfg.scopes ?? preset.scopes ?? '',
     profileMap: cfg.profileMap ?? preset.profileMap ?? ((r) => ({ id: String(r.id ?? r.sub), email: r.email, name: r.name })),
+    idTokenProfile,
+    authorizeParams: { ...preset.authorizeParams, ...cfg.authorizeParams },
   }
 }
 
@@ -160,14 +194,25 @@ export class OAuthService {
       response_type: 'code',
       scope: scopes,
       state: providerState,
+      ...provider.authorizeParams,
     })
     return redirect(`${provider.authorizeUrl}?${p}`)
   }
 
-  /** GET /callback - exchange code, upsert user+identity, redirect back. */
-  async callback(url: URL, createSession: (userId: string) => Promise<OAuthSession>): Promise<Response> {
-    const code = url.searchParams.get('code')
-    const state = url.searchParams.get('state')
+  /**
+   * GET or POST /callback - exchange code, upsert user+identity, redirect back. `params` is the query string,
+   * or the form body when the provider POSTs (Apple's form_post).
+   */
+  async callback(params: URLSearchParams, createSession: (userId: string) => Promise<OAuthSession>): Promise<Response> {
+    const code = params.get('code')
+    const state = params.get('state')
+    const providerError = params.get('error')
+    if (providerError && state) {
+      // the user cancelled at the provider (Apple: user_cancelled_authorize): back to the app with the error
+      const res = await this.db.query<FlowRow>(`delete from auth.flow_state where provider_state = $1 returning *`, [state])
+      const target = res.rows[0]?.redirect_to ?? this.siteUrl
+      return redirect(`${target}#error=${encodeURIComponent(providerError)}&error_description=${encodeURIComponent(params.get('error_description') ?? providerError)}`)
+    }
     if (!code || !state) return redirect(`${this.siteUrl}#error=invalid_request`)
 
     const res = await this.db.query<FlowRow>(
@@ -180,9 +225,13 @@ export class OAuthService {
     if (!provider) return redirect(`${flow.redirect_to}#error=provider_not_enabled`)
 
     let profile: OAuthProfile
+    let tokens: ProviderTokens
     try {
-      const token = await this.exchangeCode(provider, code)
-      profile = await this.fetchProfile(provider, token)
+      tokens = await this.exchangeCode(provider, code)
+      profile = await this.fetchProfile(provider, tokens)
+      // Apple sends the name once, on the first consent, as a `user` JSON field beside the code
+      const name = appleUserName(params.get('user'))
+      if (name && !profile.name) profile = { ...profile, name, metadata: { ...profile.metadata, full_name: name, name } }
     } catch (e) {
       const msg = encodeURIComponent(e instanceof Error ? e.message : 'oauth_error')
       return redirect(`${flow.redirect_to}#error=server_error&error_description=${msg}`)
@@ -194,21 +243,31 @@ export class OAuthService {
     if (flow.code_challenge) {
       const authCode = randomToken(24)
       await this.db.query(
-        `insert into auth.flow_state (provider, provider_state, redirect_to, code_challenge, code_challenge_method, auth_code, user_id, expires_at)
-         values ($1, $2, $3, $4, $5, $6, $7, now() + interval '5 minutes')`,
-        [flow.provider, randomToken(16), flow.redirect_to, flow.code_challenge, flow.code_challenge_method, authCode, userId]
+        `insert into auth.flow_state (provider, provider_state, redirect_to, code_challenge, code_challenge_method, auth_code, user_id,
+                                      provider_access_token, provider_refresh_token, expires_at)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, now() + interval '5 minutes')`,
+        [flow.provider, randomToken(16), flow.redirect_to, flow.code_challenge, flow.code_challenge_method, authCode, userId,
+         tokens.accessToken, tokens.refreshToken]
       )
       return redirect(`${flow.redirect_to}?code=${authCode}`)
     }
 
     // implicit: tokens in the URL fragment
     const session = await createSession(userId)
-    const hash = `#access_token=${session.access_token}&refresh_token=${session.refresh_token}&expires_in=${session.expires_in}&token_type=bearer&provider_token=`
+    const hash =
+      `#access_token=${session.access_token}&refresh_token=${session.refresh_token}&expires_in=${session.expires_in}&token_type=bearer` +
+      `&provider_token=${encodeURIComponent(tokens.accessToken)}&provider_refresh_token=${encodeURIComponent(tokens.refreshToken ?? '')}`
     return redirect(`${flow.redirect_to}${hash}`)
   }
 
-  /** POST /token?grant_type=pkce - exchange an auth code + verifier for a session. */
-  async exchangePkce(authCode: string, verifier: string): Promise<string | null> {
+  /**
+   * POST /token?grant_type=pkce - exchange an auth code + verifier for a session. Returns the user and, after
+   * an OAuth sign-in, the provider's tokens (GoTrue's provider_token / provider_refresh_token).
+   */
+  async exchangePkce(
+    authCode: string,
+    verifier: string
+  ): Promise<{ userId: string; providerToken: string | null; providerRefreshToken: string | null } | null> {
     const res = await this.db.query<FlowRow>(
       `delete from auth.flow_state where auth_code = $1 and expires_at > now() returning *`,
       [authCode]
@@ -222,10 +281,10 @@ export class OAuthService {
     } else if (flow.code_challenge && flow.code_challenge !== verifier) {
       return null // plain method
     }
-    return flow.user_id
+    return { userId: flow.user_id, providerToken: flow.provider_access_token ?? null, providerRefreshToken: flow.provider_refresh_token ?? null }
   }
 
-  private async exchangeCode(provider: ResolvedProvider, code: string): Promise<string> {
+  private async exchangeCode(provider: ResolvedProvider, code: string): Promise<ProviderTokens> {
     const body = new URLSearchParams({
       client_id: provider.clientId,
       client_secret: provider.clientSecret,
@@ -239,14 +298,18 @@ export class OAuthService {
       body,
     })
     if (!res.ok) throw new Error(`token exchange failed: HTTP ${res.status}`)
-    const json = (await res.json()) as { access_token?: string }
+    const json = (await res.json()) as { access_token?: string; refresh_token?: string; id_token?: string }
     if (!json.access_token) throw new Error('no access_token from provider')
-    return json.access_token
+    return { accessToken: json.access_token, refreshToken: json.refresh_token ?? null, idToken: json.id_token ?? null }
   }
 
-  private async fetchProfile(provider: ResolvedProvider, token: string): Promise<OAuthProfile> {
-    const res = await this.fetchImpl(provider.userInfoUrl, {
-      headers: { authorization: `Bearer ${token}`, accept: 'application/json', 'user-agent': 'tinbase' },
+  private async fetchProfile(provider: ResolvedProvider, tokens: ProviderTokens): Promise<OAuthProfile> {
+    if (provider.idTokenProfile) {
+      if (!tokens.idToken) throw new Error('no id_token from provider')
+      return verifyIdToken(provider.idTokenProfile, tokens.idToken, { audiences: [provider.clientId], fetchImpl: this.fetchImpl })
+    }
+    const res = await this.fetchImpl(provider.userInfoUrl!, {
+      headers: { authorization: `Bearer ${tokens.accessToken}`, accept: 'application/json', 'user-agent': 'tinbase' },
     })
     if (!res.ok) throw new Error(`userinfo failed: HTTP ${res.status}`)
     const profile = provider.profileMap(await res.json())
@@ -332,6 +395,8 @@ export interface OAuthSession {
 
 interface FlowRow {
   provider: string
+  provider_access_token?: string | null
+  provider_refresh_token?: string | null
   redirect_to: string
   code_challenge: string | null
   code_challenge_method: string | null
@@ -347,4 +412,16 @@ function base64url(bytes: Uint8Array): string {
   let bin = ''
   for (const b of bytes) bin += String.fromCharCode(b)
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+/** The name in Apple's `user` form field ({"name":{"firstName","lastName"},"email"}), sent on the first consent only. */
+function appleUserName(raw: string | null): string | null {
+  if (!raw) return null
+  try {
+    const n = (JSON.parse(raw) as { name?: { firstName?: string; lastName?: string } }).name
+    const full = [n?.firstName, n?.lastName].filter(Boolean).join(' ').trim()
+    return full || null
+  } catch {
+    return null
+  }
 }

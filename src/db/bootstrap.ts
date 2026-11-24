@@ -112,6 +112,9 @@ create table if not exists auth.flow_state (
   created_at timestamptz default now(),
   expires_at timestamptz not null
 );
+-- the provider's tokens after an OAuth sign-in, returned once by the PKCE exchange (GoTrue's flow_state columns)
+alter table auth.flow_state add column if not exists provider_access_token text;
+alter table auth.flow_state add column if not exists provider_refresh_token text;
 
 create table if not exists auth.mfa_factors (
   id uuid primary key default gen_random_uuid(),
@@ -383,6 +386,9 @@ create table if not exists auth.flow_state (
   created_at timestamptz default now(),
   expires_at timestamptz not null
 );
+-- the provider's tokens after an OAuth sign-in, returned once by the PKCE exchange (GoTrue's flow_state columns)
+alter table auth.flow_state add column if not exists provider_access_token text;
+alter table auth.flow_state add column if not exists provider_refresh_token text;
 
 create table if not exists auth.mfa_factors (
   id uuid primary key default gen_random_uuid(),
