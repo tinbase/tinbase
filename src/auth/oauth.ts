@@ -59,6 +59,28 @@ export interface OAuthProfile {
   name?: string
   /** extra provider fields (avatar, username, …) merged into identity_data */
   metadata?: Record<string, unknown>
+  /**
+   * GoTrue's identity data (structs.Map of the provider's claims): stored as identity_data and merged into
+   * user_metadata as is. Set by ID-token profiles (Apple, Google); others build it from id/email/metadata.
+   */
+  identityData?: Record<string, unknown>
+}
+
+/** A GoTrue HTTPError raised while signing in: `{ code, error_code, msg }` with this status, or a redirect with it. */
+export class AuthHttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string
+  ) {
+    super(message)
+  }
+}
+
+/** GoTrue's oauthErrorMap and the codes it reports as access_denied, for error redirects. */
+function oauthErrorFor(e: AuthHttpError): string {
+  if (e.code === 'signup_disabled' || e.code === 'user_banned' || e.code === 'provider_email_needs_verification') return 'access_denied'
+  return ({ 400: 'invalid_request', 401: 'unauthorized_client', 403: 'access_denied', 500: 'server_error', 503: 'temporarily_unavailable' } as Record<number, string>)[e.status] ?? 'server_error'
 }
 
 interface ResolvedProvider extends Required<Omit<OAuthProviderConfig, 'profileMap' | 'idTokenProfile' | 'authorizeParams' | 'userInfoUrl'>> {
@@ -146,7 +168,9 @@ export class OAuthService {
     configs: Record<string, OAuthProviderConfig>,
     private fetchImpl: typeof fetch = fetch,
     private uriAllowList: string[] = [],
-    private enforceRedirectAllowList = false
+    private enforceRedirectAllowList = false,
+    /** Read on every sign-in: [auth] enable_signup can change at runtime. */
+    private getSettings: () => { disableSignup: boolean } = () => ({ disableSignup: false })
   ) {
     for (const [name, cfg] of Object.entries(configs)) {
       this.providers.set(name, resolveProvider(name, cfg))
@@ -200,46 +224,56 @@ export class OAuthService {
   }
 
   /**
-   * GET or POST /callback - exchange code, upsert user+identity, redirect back. `params` is the query string,
-   * or the form body when the provider POSTs (Apple's form_post).
+   * GET or POST /callback - exchange code, upsert user+identity, redirect back. `params` is the query string
+   * merged with the form body when the provider POSTs (Apple's form_post), as GoTrue's r.Form.
+   *
+   * As GoTrue: the state is checked first, then the provider's own error (a cancel), then the code; any
+   * failure redirects to the app with error / error_description / error_code in the query AND the fragment.
    */
   async callback(params: URLSearchParams, createSession: (userId: string) => Promise<OAuthSession>): Promise<Response> {
-    const code = params.get('code')
     const state = params.get('state')
-    const providerError = params.get('error')
-    if (providerError && state) {
-      // the user cancelled at the provider (Apple: user_cancelled_authorize): back to the app with the error
-      const res = await this.db.query<FlowRow>(`delete from auth.flow_state where provider_state = $1 returning *`, [state])
-      const target = res.rows[0]?.redirect_to ?? this.siteUrl
-      return redirect(`${target}#error=${encodeURIComponent(providerError)}&error_description=${encodeURIComponent(params.get('error_description') ?? providerError)}`)
-    }
-    if (!code || !state) return redirect(`${this.siteUrl}#error=invalid_request`)
-
-    const res = await this.db.query<FlowRow>(
-      `delete from auth.flow_state where provider_state = $1 and expires_at > now() returning *`,
-      [state]
-    )
+    if (!state) return this.errorRedirect(this.siteUrl, new AuthHttpError(400, 'bad_oauth_callback', 'OAuth state parameter missing'))
+    const res = await this.db.query<FlowRow>(`delete from auth.flow_state where provider_state = $1 returning *`, [state])
     const flow = res.rows[0]
-    if (!flow) return redirect(`${this.siteUrl}#error=invalid_state`)
-    const provider = this.providers.get(flow.provider)
-    if (!provider) return redirect(`${flow.redirect_to}#error=provider_not_enabled`)
+    if (!flow) return this.errorRedirect(this.siteUrl, new AuthHttpError(400, 'bad_oauth_state', 'OAuth state not found or expired'))
+    const target = flow.redirect_to || this.siteUrl
+    if (new Date(flow.expires_at).getTime() < Date.now()) return this.errorRedirect(target, new AuthHttpError(400, 'bad_oauth_state', 'OAuth state has expired'))
 
-    let profile: OAuthProfile
+    const providerError = params.get('error')
+    if (providerError) return this.errorRedirect(target, { error: providerError, description: params.get('error_description') ?? '' })
+    const code = params.get('code')
+    if (!code) return this.errorRedirect(target, new AuthHttpError(400, 'bad_oauth_callback', 'OAuth callback with missing authorization code missing'))
+    const provider = this.providers.get(flow.provider)
+    if (!provider) return this.errorRedirect(target, new AuthHttpError(400, 'oauth_provider_not_supported', `Unsupported provider: ${flow.provider}`))
+
     let tokens: ProviderTokens
     try {
       tokens = await this.exchangeCode(provider, code)
+    } catch {
+      return this.errorRedirect(target, new AuthHttpError(500, 'unexpected_failure', `Unable to exchange external code: ${code.slice(0, 4)}`))
+    }
+    let profile: OAuthProfile
+    try {
       profile = await this.fetchProfile(provider, tokens)
-      // Apple sends the name once, on the first consent, as a `user` JSON field beside the code
-      const name = appleUserName(params.get('user'))
-      if (name && !profile.name) profile = { ...profile, name, metadata: { ...profile.metadata, full_name: name, name } }
-    } catch (e) {
-      const msg = encodeURIComponent(e instanceof Error ? e.message : 'oauth_error')
-      return redirect(`${flow.redirect_to}#error=server_error&error_description=${msg}`)
+    } catch {
+      return this.errorRedirect(target, new AuthHttpError(500, 'unexpected_failure', 'Error getting user profile from external provider'))
+    }
+    // Apple's ParseUser: the name, sent once (first consent) as a `user` JSON field beside the code
+    const name = provider.name === 'apple' ? appleUserName(params.get('user')) : null
+    if (name) {
+      profile = { ...profile, name, metadata: { ...profile.metadata, name, full_name: name } }
+      if (profile.identityData) profile.identityData = { ...profile.identityData, name, full_name: name }
     }
 
-    const userId = await this.upsertUser(provider.name, profile)
+    let userId: string
+    try {
+      userId = await this.upsertUser(provider.name, profile)
+    } catch (e) {
+      if (e instanceof AuthHttpError) return this.errorRedirect(target, e)
+      throw e
+    }
 
-    // PKCE: hand back an auth code the client exchanges for a session.
+    // PKCE: hand back an auth code the client exchanges for a session (and the provider's tokens).
     if (flow.code_challenge) {
       const authCode = randomToken(24)
       await this.db.query(
@@ -252,12 +286,37 @@ export class OAuthService {
       return redirect(`${flow.redirect_to}?code=${authCode}`)
     }
 
-    // implicit: tokens in the URL fragment
+    // implicit: GoTrue's AccessTokenResponse.AsRedirectURL - the session and the provider's tokens in the
+    // fragment, url.Values-encoded (keys sorted), with the `sb` marker
     const session = await createSession(userId)
-    const hash =
-      `#access_token=${session.access_token}&refresh_token=${session.refresh_token}&expires_in=${session.expires_in}&token_type=bearer` +
-      `&provider_token=${encodeURIComponent(tokens.accessToken)}&provider_refresh_token=${encodeURIComponent(tokens.refreshToken ?? '')}`
-    return redirect(`${flow.redirect_to}${hash}`)
+    const values: Record<string, string> = {
+      access_token: session.access_token,
+      expires_at: String(session.expires_at ?? Math.floor(Date.now() / 1000) + session.expires_in),
+      expires_in: String(session.expires_in),
+      provider_token: tokens.accessToken,
+      refresh_token: session.refresh_token,
+      sb: '',
+      token_type: 'bearer',
+    }
+    if (tokens.refreshToken) values.provider_refresh_token = tokens.refreshToken
+    return redirect(`${flow.redirect_to}#${sortedQuery(values)}`)
+  }
+
+  /** GoTrue's redirectErrors: the error in the target's query and in its fragment (with `sb`). */
+  private errorRedirect(base: string, err: AuthHttpError | { error: string; description: string }): Response {
+    const values: Record<string, string> =
+      err instanceof AuthHttpError
+        ? { error: oauthErrorFor(err), error_description: err.message, error_code: err.code }
+        : { error: err.error, ...(err.description ? { error_description: err.description } : {}) }
+    let u: URL
+    try {
+      u = new URL(base)
+    } catch {
+      u = new URL(this.siteUrl)
+    }
+    for (const k of Object.keys(values).sort()) u.searchParams.set(k, values[k])
+    u.hash = sortedQuery({ ...values, sb: '' })
+    return redirect(u.toString())
   }
 
   /**
@@ -318,44 +377,67 @@ export class OAuthService {
   }
 
   /**
-   * Sign in from a profile someone else already verified (a native ID token):
-   * the same find-or-create and email-linking rules as the OAuth callback.
+   * Sign in from a profile someone else already verified (a native ID token): the same find-or-create and
+   * email-linking rules as the OAuth callback (GoTrue createAccountFromExternalIdentity).
    */
   signInWithProfile(provider: string, profile: OAuthProfile): Promise<string> {
     return this.upsertUser(provider, profile)
   }
 
-  private async upsertUser(provider: string, profile: OAuthProfile): Promise<string> {
-    // existing identity?
-    const existing = await this.db.query<{ user_id: string }>(
-      `select user_id from auth.identities where provider = $1 and provider_id = $2`,
-      [provider, profile.id]
-    )
+  /**
+   * Link a verified identity to a signed-in user (signInWithIdToken / linkIdentity with link_identity),
+   * as GoTrue's linkIdentityToUser.
+   *
+   * @throws AuthHttpError identity_already_exists when the identity belongs to this or another user.
+   */
+  async linkIdentity(userId: string, provider: string, profile: OAuthProfile): Promise<string> {
+    const existing = await this.db.query<{ user_id: string }>(`select user_id from auth.identities where provider = $1 and provider_id = $2`, [provider, profile.id])
     if (existing.rows[0]) {
-      await this.db.query(`update auth.identities set last_sign_in_at = now(), identity_data = $3 where provider = $1 and provider_id = $2`, [
+      throw new AuthHttpError(422, 'identity_already_exists', existing.rows[0].user_id === userId ? 'Identity is already linked' : 'Identity is already linked to another user')
+    }
+    await this.db.query(`insert into auth.identities (user_id, provider, provider_id, identity_data) values ($1, $2, $3, $4::jsonb)`, [
+      userId,
+      provider,
+      profile.id,
+      JSON.stringify(identityDataOf(profile)),
+    ])
+    await this.updateProviders(userId)
+    return userId
+  }
+
+  private async upsertUser(provider: string, profile: OAuthProfile): Promise<string> {
+    const identityData = identityDataOf(profile)
+    // AccountExists: this provider identity has signed in before
+    const existing = await this.db.query<{ user_id: string }>(`select user_id from auth.identities where provider = $1 and provider_id = $2`, [provider, profile.id])
+    if (existing.rows[0]) {
+      const userId = existing.rows[0].user_id
+      await this.refuseBanned(userId)
+      await this.db.query(`update auth.identities set last_sign_in_at = now(), updated_at = now(), identity_data = $3::jsonb where provider = $1 and provider_id = $2`, [
         provider,
         profile.id,
-        JSON.stringify({ sub: profile.id, email: profile.email, ...profile.metadata }),
+        JSON.stringify(identityData),
       ])
-      await this.db.query(`update auth.users set last_sign_in_at = now() where id = $1`, [existing.rows[0].user_id])
-      return existing.rows[0].user_id
+      await this.afterSignIn(userId, identityData)
+      return userId
     }
 
-    // Link to an existing user with the same email ONLY when the provider
-    // asserts the email is verified - otherwise an attacker could register a
-    // provider account with a victim's unverified email and take over their
-    // account. Unverified → fall through and create a separate user.
+    // LinkAccount: an existing user with the same email, ONLY when the provider asserts the email is verified -
+    // otherwise an attacker could register a provider account with a victim's unverified email and take over
+    // their account. Unverified → fall through and create a separate user.
     let userId: string | undefined
     const email = profile.email?.toLowerCase() ?? null
     const verified = !!profile.email && profile.emailVerified === true
     if (email && verified) {
       const byEmail = await this.db.query<{ id: string }>(`select id from auth.users where email = $1`, [email])
       userId = byEmail.rows[0]?.id
+      if (userId) await this.refuseBanned(userId)
     }
     if (!userId) {
-      // Only claim the email on the new user when the provider verified it AND
-      // it isn't already owned by another account. An unverified or taken email
-      // is left null so it can't collide with (or hijack) an existing user.
+      // CreateAccount
+      if (this.getSettings().disableSignup) throw new AuthHttpError(422, 'signup_disabled', 'Signups not allowed for this instance')
+      // Only claim the email on the new user when the provider verified it AND it isn't already owned by
+      // another account. An unverified or taken email is left null so it can't collide with (or hijack) an
+      // existing user.
       let userEmail: string | null = verified ? email : null
       if (userEmail) {
         const taken = await this.db.query(`select 1 from auth.users where email = $1`, [userEmail])
@@ -365,22 +447,72 @@ export class OAuthService {
         `insert into auth.users (aud, role, email, email_confirmed_at, last_sign_in_at, raw_app_meta_data, raw_user_meta_data)
          values ('authenticated','authenticated',$1, $2, now(),
                  $3::jsonb, $4::jsonb) returning id`,
-        [
-          userEmail,
-          userEmail ? new Date().toISOString() : null,
-          JSON.stringify({ provider, providers: [provider] }),
-          JSON.stringify({ sub: profile.id, email: profile.email, full_name: profile.name, ...profile.metadata }),
-        ]
+        [userEmail, userEmail ? new Date().toISOString() : null, JSON.stringify({ provider, providers: [provider] }), JSON.stringify(identityData)]
       )
       userId = created.rows[0].id
     }
-    await this.db.query(
-      `insert into auth.identities (user_id, provider, provider_id, identity_data)
-       values ($1, $2, $3, $4::jsonb)`,
-      [userId, provider, profile.id, JSON.stringify({ sub: profile.id, email: profile.email, ...profile.metadata })]
-    )
-    return userId!
+    await this.db.query(`insert into auth.identities (user_id, provider, provider_id, identity_data) values ($1, $2, $3, $4::jsonb)`, [
+      userId,
+      provider,
+      profile.id,
+      JSON.stringify(identityData),
+    ])
+    await this.afterSignIn(userId, identityData)
+    return userId
   }
+
+  /** GoTrue: user.IsBanned() → 403 user_banned. */
+  private async refuseBanned(userId: string): Promise<void> {
+    const r = await this.db.query<{ banned_until: string | Date | null }>(`select banned_until from auth.users where id = $1`, [userId])
+    const until = r.rows[0]?.banned_until
+    if (until && new Date(until).getTime() > Date.now()) throw new AuthHttpError(403, 'user_banned', 'User is banned')
+  }
+
+  /** GoTrue: UpdateUserMetaData(identityData) + UpdateAppMetaDataProviders, and last_sign_in_at. */
+  private async afterSignIn(userId: string, identityData: Record<string, unknown>): Promise<void> {
+    const r = await this.db.query<{ raw_user_meta_data: unknown }>(`select raw_user_meta_data from auth.users where id = $1`, [userId])
+    const meta = { ...asObject(r.rows[0]?.raw_user_meta_data) }
+    for (const [k, v] of Object.entries(identityData)) {
+      if (v === null || v === undefined) delete meta[k]
+      else meta[k] = v
+    }
+    await this.db.query(`update auth.users set raw_user_meta_data = $2::jsonb, last_sign_in_at = now(), updated_at = now() where id = $1`, [userId, JSON.stringify(meta)])
+    await this.updateProviders(userId)
+  }
+
+  /** GoTrue UpdateAppMetaDataProviders: providers = distinct identity providers, oldest first; provider = the first. */
+  private async updateProviders(userId: string): Promise<void> {
+    const ids = await this.db.query<{ provider: string }>(`select provider from auth.identities where user_id = $1 order by created_at asc`, [userId])
+    const providers = [...new Set(ids.rows.map((i) => i.provider))]
+    const r = await this.db.query<{ raw_app_meta_data: unknown }>(`select raw_app_meta_data from auth.users where id = $1`, [userId])
+    const app = { ...asObject(r.rows[0]?.raw_app_meta_data), providers, ...(providers.length ? { provider: providers[0] } : {}) }
+    await this.db.query(`update auth.users set raw_app_meta_data = $2::jsonb where id = $1`, [userId, JSON.stringify(app)])
+  }
+}
+
+/** identity_data for a profile: GoTrue's claims map when the profile has one, else the legacy shape. */
+function identityDataOf(profile: OAuthProfile): Record<string, unknown> {
+  return profile.identityData ?? { sub: profile.id, email: profile.email, ...profile.metadata }
+}
+
+function asObject(v: unknown): Record<string, unknown> {
+  if (v && typeof v === 'object') return v as Record<string, unknown>
+  if (typeof v === 'string') {
+    try {
+      const o = JSON.parse(v)
+      return o && typeof o === 'object' ? o : {}
+    } catch {
+      return {}
+    }
+  }
+  return {}
+}
+
+/** url.Values.Encode(): keys sorted, form-encoded. */
+function sortedQuery(values: Record<string, string>): string {
+  const q = new URLSearchParams()
+  for (const k of Object.keys(values).sort()) q.set(k, values[k])
+  return q.toString()
 }
 
 /** The minimal session the callback puts in the redirect fragment for the implicit flow. */
@@ -391,6 +523,8 @@ export interface OAuthSession {
   refresh_token: string
   /** access-token lifetime in seconds */
   expires_in: number
+  /** when the access token expires, unix seconds */
+  expires_at?: number
 }
 
 interface FlowRow {
@@ -402,10 +536,12 @@ interface FlowRow {
   code_challenge_method: string | null
   auth_code: string | null
   user_id: string | null
+  expires_at: string | Date
 }
 
 function redirect(location: string): Response {
-  return new Response(null, { status: 303, headers: { location } })
+  // GoTrue redirects with 302 Found (authorize and callback alike)
+  return new Response(null, { status: 302, headers: { location } })
 }
 
 function base64url(bytes: Uint8Array): string {

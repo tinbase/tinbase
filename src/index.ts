@@ -364,6 +364,8 @@ export async function createBackend(config: BackendConfig = {}): Promise<Tinbase
     hookFetch: config.hookFetch,
     oauthProviders: config.oauthProviders,
     idTokenClients: config.idTokenClients,
+    skipNonceCheck: config.skipNonceCheck,
+    iosBundleId: config.iosBundleId,
     oauthFetch: config.oauthFetch,
     uriAllowList: config.uriAllowList,
     enforceRedirectAllowList: isNetworkExposed(config.host),

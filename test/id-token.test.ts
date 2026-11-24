@@ -101,7 +101,7 @@ describe('signInWithIdToken (apple)', () => {
     expect(b.data.user?.id).toBe(a.data.user?.id)
   })
 
-  it('links to an existing email account only when Apple verified the email', async () => {
+  it("links to an existing email account: Apple's email always counts as verified (GoTrue parseAppleIDToken)", async () => {
     const sb = client()
     const signup = await sb.auth.signUp({ email: 'linked@example.com', password: 'password-123' })
     expect(signup.error).toBeNull()
@@ -112,7 +112,7 @@ describe('signInWithIdToken (apple)', () => {
       token: await appleToken({ sub: 'other.sub', email: 'linked@example.com', email_verified: 'false' }),
     })
     expect(unverified.error).toBeNull()
-    expect(unverified.data.user?.id).not.toBe(signup.data.user?.id)
+    expect(unverified.data.user?.id).toBe(signup.data.user?.id)
   })
 
   it('accepts any of the configured client ids', async () => {
@@ -122,29 +122,30 @@ describe('signInWithIdToken (apple)', () => {
 
   it("rejects a token issued to another app (aud), so another app's token can't sign in here", async () => {
     const { error } = await client().auth.signInWithIdToken({ provider: 'apple', token: await appleToken({ aud: 'com.attacker.app' }) })
-    expect(error?.message).toMatch(/audience/)
+    expect(error?.message).toBe('Unacceptable audience in id_token: [com.attacker.app]')
   })
 
   it('rejects a bad signature, a wrong issuer, an expired token and an unknown key', async () => {
     const forged = await appleToken({}, { key: otherKeys.privateKey })
-    expect((await client().auth.signInWithIdToken({ provider: 'apple', token: forged })).error?.message).toMatch(/signature/)
+    // GoTrue reports every verification failure as "Bad ID token", and a non-Apple issuer before that
+    expect((await client().auth.signInWithIdToken({ provider: 'apple', token: forged })).error?.message).toBe('Bad ID token')
     const wrongIss = await appleToken({ iss: 'https://evil.example' })
-    expect((await client().auth.signInWithIdToken({ provider: 'apple', token: wrongIss })).error?.message).toMatch(/issuer/)
+    expect((await client().auth.signInWithIdToken({ provider: 'apple', token: wrongIss })).error?.message).toBe('Detected ID token issuer is not an Apple ID token issuer')
     const old = Math.floor(Date.now() / 1000) - 3600
     const expired = await appleToken({ iat: old - 600, exp: old })
-    expect((await client().auth.signInWithIdToken({ provider: 'apple', token: expired })).error?.message).toMatch(/expired/)
+    expect((await client().auth.signInWithIdToken({ provider: 'apple', token: expired })).error?.message).toBe('Bad ID token')
     const unknownKid = await appleToken({}, { kid: 'rotated-away' })
-    expect((await client().auth.signInWithIdToken({ provider: 'apple', token: unknownKid })).error?.message).toMatch(/unknown key/)
+    expect((await client().auth.signInWithIdToken({ provider: 'apple', token: unknownKid })).error?.message).toBe('Bad ID token')
   })
 
   it('checks the nonce: the raw nonce must hash to the one in the token', async () => {
     const raw = 'raw-nonce-123'
     const token = await appleToken({ sub: 'nonce.sub', nonce: await sha256Hex(raw) })
     expect((await client().auth.signInWithIdToken({ provider: 'apple', token, nonce: raw })).error).toBeNull()
-    expect((await client().auth.signInWithIdToken({ provider: 'apple', token, nonce: 'wrong' })).error?.message).toMatch(/nonce/)
-    expect((await client().auth.signInWithIdToken({ provider: 'apple', token })).error?.message).toMatch(/nonce/)
+    expect((await client().auth.signInWithIdToken({ provider: 'apple', token, nonce: 'wrong' })).error?.message).toBe('Nonces mismatch')
+    expect((await client().auth.signInWithIdToken({ provider: 'apple', token })).error?.message).toBe('Passed nonce and nonce in id_token should either both exist or not.')
     // the hash itself (visible in the token) is not accepted as the nonce
-    expect((await client().auth.signInWithIdToken({ provider: 'apple', token, nonce: await sha256Hex(raw) })).error?.message).toMatch(/nonce/)
+    expect((await client().auth.signInWithIdToken({ provider: 'apple', token, nonce: await sha256Hex(raw) })).error?.message).toBe('Nonces mismatch')
   })
 
   it('caches the signing keys between sign-ins', async () => {

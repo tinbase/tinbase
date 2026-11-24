@@ -64,6 +64,10 @@ export interface AuthConfig {
   oauthProviders: Record<string, OAuthProviderConfig>
   /** Native ID-token sign-in client ids from [auth.external.*] client_id (comma-separated), secret not needed */
   idTokenClients: Record<string, string[]>
+  /** [auth.external.<p>] skip_nonce_check = true / GOTRUE_EXTERNAL_<P>_SKIP_NONCE_CHECK */
+  skipNonceCheck: string[]
+  /** GOTRUE_EXTERNAL_IOS_BUNDLE_ID: an extra accepted Apple ID-token audience */
+  iosBundleId?: string
   /**
    * [auth.email.template.*]: per-type `subject` and `content_path`. The path is
    * recorded, not read - loading files is the CLI's job, since config parsing
@@ -146,7 +150,7 @@ export function loadProjectConfig(projectDir: string, env: NodeJS.ProcessEnv = p
 
 function readAuth(root: ConfigTable, env: NodeJS.ProcessEnv): AuthConfig {
   const auth = tableAt(root, 'auth')
-  const out: AuthConfig = { settings: readAuthSettings(root), oauthProviders: readOAuthProviders(root, env), idTokenClients: readIdTokenClients(root, env) }
+  const out: AuthConfig = { settings: readAuthSettings(root), oauthProviders: readOAuthProviders(root, env), idTokenClients: readIdTokenClients(root, env), skipNonceCheck: readSkipNonceCheck(root, env), iosBundleId: env.GOTRUE_EXTERNAL_IOS_BUNDLE_ID || undefined }
 
   const enabled = getBool(auth, 'enabled')
   if (enabled !== undefined) out.enabled = enabled
@@ -421,6 +425,14 @@ function readIdTokenClients(root: ConfigTable, env: NodeJS.ProcessEnv): Record<s
     }
   }
   return out
+}
+
+function readSkipNonceCheck(root: ConfigTable, env: NodeJS.ProcessEnv): string[] {
+  const out = new Set<string>()
+  const external = tableAt(root, 'auth.external')
+  if (external) for (const [name, t] of external.children) if (getBool(t, 'skip_nonce_check') === true) out.add(name.toLowerCase())
+  for (const p of ID_TOKEN_PROVIDERS) if (env[`GOTRUE_EXTERNAL_${p.toUpperCase()}_SKIP_NONCE_CHECK`] === 'true') out.add(p)
+  return [...out]
 }
 
 function collectEnvProviders(

@@ -15,6 +15,24 @@ All notable changes to tinbase are documented here. The format follows
   Supabase: `[auth.external.apple] client_id = "<Services ID>,<bundle id>"` (the web flow uses the first,
   native sign-in accepts them all) and `secret = "<client-secret JWT>"`. A cancel at Apple returns to the
   app as `#error=user_cancelled_authorize`.
+- **Apple and OAuth parity with supabase/auth (GoTrue)**, checked line by line against its source:
+  - ID tokens from Apple's second issuer `https://account.apple.com` are accepted; an Apple email always
+    counts as verified; Apple identity data is GoTrue's (`iss`, `sub`, `provider_id`, `email_verified`,
+    `phone_verified`, `custom_claims` with `is_private_email` / `auth_time` / `transfer_sub`).
+  - `signInWithIdToken` takes GoTrue's parameters: `issuer` + `client_id` instead of `provider`,
+    `access_token` (checked against `at_hash`), `link_identity` (link to the signed-in user);
+    `[auth.external.<p>] skip_nonce_check`; `GOTRUE_EXTERNAL_IOS_BUNDLE_ID` as an extra Apple audience.
+  - Errors are GoTrue's, word for word: OAuth errors as HTTP 400 `{ error, error_description }` ("Bad ID
+    token", "Unacceptable audience in id_token: [...]", "Nonces mismatch", …) and HTTP errors with its codes
+    (`provider_disabled`, `validation_failed`, `identity_already_exists`, `user_banned`, `signup_disabled`).
+  - Sign-ins (OAuth and ID token) merge the identity data into `user_metadata`, keep
+    `app_metadata.providers` / `provider` in step with the user's identities, refuse banned users and
+    respect `enable_signup = false`.
+  - The OAuth callback redirects with 302 like GoTrue; the implicit fragment adds `expires_at` and `sb` (keys
+    sorted); errors go to the app in the query and the fragment; `/authorize` answers an unknown or
+    disabled provider with a 400 instead of a redirect.
+  - `/settings` lists every provider GoTrue knows (`false` unless enabled), plus `saml_enabled` /
+    `passkeys_enabled`.
 - OAuth sessions carry the provider's own tokens, as on Supabase: `provider_token` and
   `provider_refresh_token` in the implicit redirect and in the `grant_type=pkce` exchange (stored on
   `auth.flow_state` until the exchange; two columns added to existing databases).

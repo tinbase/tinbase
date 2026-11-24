@@ -1099,6 +1099,8 @@ async function main(): Promise<void> {
     sessionTimeboxSeconds: cfg.auth.sessionTimeboxSeconds,
     oauthProviders: cfg.auth.oauthProviders,
     idTokenClients: cfg.auth.idTokenClients,
+    skipNonceCheck: cfg.auth.skipNonceCheck,
+    iosBundleId: cfg.auth.iosBundleId,
     dbSchemas: cfg.api.schemas,
     maxRows: cfg.api.maxRows,
     storageFileSizeLimit: cfg.storage.fileSizeLimit,

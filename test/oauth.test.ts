@@ -78,17 +78,21 @@ describe('oauth', () => {
         redirect: 'manual',
       })
     )
-    expect(authRes.status).toBe(303)
+    expect(authRes.status).toBe(302) // GoTrue: 302 Found
     const providerUrl = authRes.headers.get('location')!
     expect(providerUrl).toContain('https://mock/authorize')
     expect(providerUrl).toContain('client_id=client-id')
 
     // 2. provider redirects back to /callback; tinbase issues a session
     const cbRes = await driveProvider(providerUrl)
-    expect(cbRes.status).toBe(303)
+    expect(cbRes.status).toBe(302)
     const back = cbRes.headers.get('location')!
     expect(back).toContain('http://app.local/welcome#access_token=')
     expect(back).toContain('refresh_token=')
+    // GitHub returns no refresh token: GoTrue leaves provider_refresh_token out, provider_token is GitHub's
+    const frag = new URLSearchParams(back.split('#')[1])
+    expect([...frag.keys()]).toEqual(['access_token', 'expires_at', 'expires_in', 'provider_token', 'refresh_token', 'sb', 'token_type'])
+    expect(frag.get('provider_token')).toBe('provider-tok')
 
     // 3. the created user + identity exist
     const users = await backend.db.query(`select email from auth.users where email = 'octo@example.com'`)
@@ -124,10 +128,12 @@ describe('oauth', () => {
     expect(sess.user?.email).toBe('octo@example.com')
   })
 
-  it('unknown provider redirects with an error', async () => {
+  it('unknown provider is a 400 validation_failed, as GoTrue', async () => {
     const res = await backend.fetch(new Request(`${BASE}/auth/v1/authorize?provider=nope`, { redirect: 'manual' }))
-    expect(res.status).toBe(303)
-    expect(res.headers.get('location')).toContain('error=provider_not_enabled')
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ code: 400, error_code: 'validation_failed', msg: 'Unsupported provider: Provider nope could not be found' })
+    const off = await backend.fetch(new Request(`${BASE}/auth/v1/authorize?provider=google`, { redirect: 'manual' }))
+    expect(await off.json()).toEqual({ code: 400, error_code: 'validation_failed', msg: 'Unsupported provider: provider is not enabled' })
   })
 
   it('does not link an unverified provider email to an existing account', async () => {

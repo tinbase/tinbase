@@ -128,6 +128,9 @@ describe('Sign in with Apple on the web (signInWithOAuth)', () => {
     const loc = back.headers.get('location')!
     expect(loc.startsWith('http://app.local/#')).toBe(true)
     const frag = new URLSearchParams(loc.split('#')[1])
+    // GoTrue AsRedirectURL: url.Values.Encode() (keys sorted), expires_at and the `sb` marker
+    expect([...frag.keys()]).toEqual(['access_token', 'expires_at', 'expires_in', 'provider_refresh_token', 'provider_token', 'refresh_token', 'sb', 'token_type'])
+    expect(back.status).toBe(302)
     expect(frag.get('access_token')).toBeTruthy()
     expect(frag.get('provider_token')).toBe('apple-access')
     expect(frag.get('provider_refresh_token')).toBe('apple-refresh')
@@ -169,7 +172,9 @@ describe('Sign in with Apple on the web (signInWithOAuth)', () => {
         redirect: 'manual',
       })
     )
-    expect(res.headers.get('location')).toMatch(/^http:\/\/app\.local\/#error=user_cancelled_authorize/)
+    // GoTrue redirectErrors: the provider's error in the query and in the fragment (with sb)
+    expect(res.status).toBe(302)
+    expect(res.headers.get('location')).toBe('http://app.local/?error=user_cancelled_authorize#error=user_cancelled_authorize&sb=')
   })
 
   it("refuses an id_token issued to another client (the profile is Apple's verified token)", async () => {
@@ -177,7 +182,11 @@ describe('Sign in with Apple on the web (signInWithOAuth)', () => {
     const { data } = await client('implicit').auth.signInWithOAuth({ provider: 'apple', options: { redirectTo: 'http://app.local/', skipBrowserRedirect: true } })
     const authorize = (await backend.fetch(new Request(data.url!, { redirect: 'manual' }))).headers.get('location')!
     const back = await applePostsBack(authorize)
-    expect(back.headers.get('location')).toMatch(/#error=server_error.*audience/)
+    // GoTrue: a token Apple's verifier rejects fails GetUserData → 500 unexpected_failure
+    expect(back.headers.get('location')).toBe(
+      'http://app.local/?error=server_error&error_code=unexpected_failure&error_description=Error+getting+user+profile+from+external+provider' +
+        '#error=server_error&error_code=unexpected_failure&error_description=Error+getting+user+profile+from+external+provider&sb='
+    )
   })
 
   it('native sign-in keeps working beside the web flow (same [auth.external.apple] block)', async () => {
