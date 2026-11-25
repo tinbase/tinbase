@@ -23,6 +23,11 @@ export interface AuthSettings {
   minPasswordLength: number
   /** Configured OAuth providers the operator has switched off at runtime. */
   disabledProviders: string[]
+  /**
+   * linkIdentity / unlinkIdentity (GET /user/identities/authorize, DELETE /user/identities/{id}): GoTrue's
+   * SECURITY_MANUAL_LINKING_ENABLED, config.toml [auth] enable_manual_linking. Off by default, as Supabase.
+   */
+  manualLinking: boolean
   /** Digits in emailed OTP codes (config.toml auth.email.otp_length; 6-10). */
   otpLength: number
   /** OTP / magic-link lifetime in seconds (auth.email.otp_expiry). */
@@ -102,6 +107,7 @@ export const DEFAULT_AUTH_SETTINGS: AuthSettings = {
   autoconfirm: true,
   minPasswordLength: 6,
   disabledProviders: [],
+  manualLinking: false,
   otpLength: 6,
   otpExpirySeconds: 3600,
   maxEmailFrequencySeconds: 60,
@@ -124,6 +130,7 @@ function sanitize(raw: Record<string, unknown>): AuthSettings {
   if (typeof raw.disableSignup === 'boolean') s.disableSignup = raw.disableSignup
   if (typeof raw.anonymousUsers === 'boolean') s.anonymousUsers = raw.anonymousUsers
   if (typeof raw.autoconfirm === 'boolean') s.autoconfirm = raw.autoconfirm
+  if (typeof raw.manualLinking === 'boolean') s.manualLinking = raw.manualLinking
   if (typeof raw.minPasswordLength === 'number' && Number.isFinite(raw.minPasswordLength)) {
     s.minPasswordLength = Math.max(4, Math.min(72, Math.floor(raw.minPasswordLength)))
   }
@@ -266,6 +273,7 @@ export function applyAuthSettingsPatch(target: AuthSettings, patch: Record<strin
     'disableSignup',
     'anonymousUsers',
     'autoconfirm',
+    'manualLinking',
     'totpEnrollEnabled',
     'totpVerifyEnabled',
     'phoneEnabled',

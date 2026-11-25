@@ -6,7 +6,8 @@ import type { Database } from '../db/database.js'
 import { randomToken, signJwt, verifyJwt, type JwtClaims } from '../jwt.js'
 import { TINBASE_VERSION, type Mailer, type RequestContext, type SmsSender } from '../types.js'
 import { OAuthService, type OAuthProviderConfig } from './oauth.js'
-import { IdTokenError, verifyIdToken } from './id-token.js'
+import { IdTokenError, checkAppleIssuer, isAppleIssuer, verifyIdToken } from './id-token.js'
+import { AuthHttpError } from './oauth.js'
 import { asBcrypt2a, hashPassword, isBcryptHash, verifyPassword } from './password.js'
 import { qrSvgDataUri } from './qr.js'
 import { DEFAULT_AUTH_SETTINGS, type AuthSettings } from './settings.js'
@@ -79,6 +80,14 @@ export interface AuthConfig {
    * `[auth.external.apple] client_id` (comma-separated), as on Supabase.
    */
   idTokenClients?: Record<string, string[]>
+  /** Providers whose ID tokens skip the nonce check ([auth.external.<p>] skip_nonce_check). */
+  skipNonceCheck?: string[]
+  /** Providers that may sign in without an email ([auth.external.<p>] email_optional). */
+  emailOptional?: string[]
+  /** GOTRUE_MAILER_ALLOW_UNVERIFIED_EMAIL_SIGN_INS: sign in before confirming an unverified provider email. */
+  allowUnverifiedEmailSignIns?: boolean
+  /** GOTRUE_EXTERNAL_IOS_BUNDLE_ID: also accepted as an Apple ID token audience. */
+  iosBundleId?: string
   /** injectable fetch for the OAuth provider calls (tests use a mock provider) */
   oauthFetch?: typeof fetch
   /**
@@ -127,6 +136,17 @@ interface UserRow {
 function authError(status: number, errorCode: string, msg: string): Response {
   return json(status, { code: status, error_code: errorCode, msg })
 }
+
+/** GoTrue's OAuthError: always HTTP 400, `{ error, error_description }`. */
+function oauthError(error: string, description: string): Response {
+  return json(400, { error, error_description: description })
+}
+
+/** The providers GoTrue's /settings lists (ProviderSettings), each false unless enabled. */
+const GOTRUE_EXTERNAL_PROVIDERS = [
+  'apple', 'azure', 'bitbucket', 'discord', 'facebook', 'snapchat', 'figma', 'fly', 'github', 'gitlab', 'google', 'keycloak',
+  'kakao', 'linkedin', 'linkedin_oidc', 'notion', 'spotify', 'slack', 'slack_oidc', 'workos', 'twitch', 'twitter', 'zoom',
+]
 
 /** The SMS provider refused or could not be reached; rendered as GoTrue's `sms_send_failed`. */
 class SmsSendFailed extends Error {}
@@ -267,7 +287,22 @@ export class AuthHandler {
       config.oauthProviders ?? {},
       config.oauthFetch ?? fetch,
       config.uriAllowList,
-      config.enforceRedirectAllowList
+      config.enforceRedirectAllowList,
+      {
+        settings: () => this.settings,
+        allowUnverifiedEmailSignIns: config.allowUnverifiedEmailSignIns ?? false,
+        emailOptional: config.emailOptional ?? [],
+        confirmationTooSoon: async (email) => {
+          const res = await this.limitEmailFrequency(email, 'confirmation_sent_at')
+          if (!res) return null
+          const body = (await res.json()) as { error_code: string; msg: string }
+          return new AuthHttpError(res.status, body.error_code, body.msg)
+        },
+        sendConfirmation: async (email, redirectTo) => {
+          await this.issueToken(email, 'otp', false, { flavor: 'confirm', redirectTo })
+        },
+        audit: (action, actor, traits, type) => this.audit(action, { actorId: actor.id, actorEmail: actor.email, traits, type }),
+      }
     )
     this.settings = config.settings ?? { ...DEFAULT_AUTH_SETTINGS }
     this.rateLimiter = config.rateLimiter === undefined ? new RateLimiter() : config.rateLimiter
@@ -377,13 +412,15 @@ export class AuthHandler {
     try {
       if (path === 'health') return json(200, { name: 'tinbase-auth', version: TINBASE_VERSION, description: 'GoTrue-compatible auth' })
       if (path === 'settings') {
-        const providers = [...new Set([...Object.keys(this.config.oauthProviders ?? {}), ...Object.keys(this.config.idTokenClients ?? {})])]
+        // GoTrue's ProviderSettings: every provider it knows, false unless enabled here
+        const configured = new Set([...Object.keys(this.config.oauthProviders ?? {}), ...Object.keys(this.config.idTokenClients ?? {})])
+        const known = [...GOTRUE_EXTERNAL_PROVIDERS, ...configured].filter((p, i, a) => a.indexOf(p) === i)
         return json(200, {
           external: {
+            anonymous_users: this.settings.anonymousUsers,
+            ...Object.fromEntries(known.map((p) => [p, configured.has(p) && !this.settings.disabledProviders.includes(p)])),
             email: true,
             phone: this.settings.phoneEnabled,
-            anonymous_users: this.settings.anonymousUsers,
-            ...Object.fromEntries(providers.map((p) => [p, !this.settings.disabledProviders.includes(p)])),
           },
           disable_signup: this.settings.disableSignup,
           autoconfirm: this.settings.autoconfirm,
@@ -391,12 +428,17 @@ export class AuthHandler {
           phone_autoconfirm: this.settings.smsAutoconfirm,
           sms_provider: this.settings.phoneEnabled ? (this.config.smsProviderName ?? '') : '',
           minimum_password_length: this.settings.minPasswordLength,
+          // GoTrue Settings fields tinbase has no feature behind
+          saml_enabled: false,
+          passkeys_enabled: false,
         })
       }
       if (path === 'signup' && method === 'POST') return this.limit('signup', req) ?? (await this.signup(req, url))
       if (path === 'token' && method === 'POST') return this.limit('token', req) ?? (await this.token(req, url))
       if (path === 'user' && method === 'GET') return await this.getUser(req)
       if (path === 'user' && method === 'PUT') return await this.updateUser(req, url)
+      if (path === 'user/identities/authorize' && method === 'GET') return await this.linkIdentityAuthorize(req, url)
+      if (path.startsWith('user/identities/') && method === 'DELETE') return await this.unlinkIdentity(req, path.slice('user/identities/'.length))
       if (path === 'logout' && method === 'POST') return await this.logout(req)
       // /otp, /magiclink and /resend pick their limit (`otp` for mail, `sms`
       // for a text) once the body says which, so they are rate-limited inside.
@@ -417,14 +459,18 @@ export class AuthHandler {
       if (/^factors\/[^/]+$/.test(path) && method === 'DELETE')
         return await this.unenrollFactor(req, path.split('/')[1])
       if (path === 'authorize' && method === 'GET') {
-        const provider = url.searchParams.get('provider') ?? ''
-        if (provider && this.settings.disabledProviders.includes(provider)) {
-          return authError(422, 'provider_disabled', `Sign-ins with ${provider} are disabled`)
-        }
+        // GoTrue's GetExternalProviderRedirectURL: an unknown or disabled provider is a 400, not a redirect
+        const refused = this.unsupportedProvider(url.searchParams.get('provider') ?? '')
+        if (refused) return refused
         return await this.oauth.authorize(url)
       }
       if (path === 'callback' && (method === 'GET' || method === 'POST')) {
-        return await this.oauth.callback(url, (userId) => this.sessionTokensFor(userId))
+        // Apple answers with a POSTed form (response_mode=form_post); its fields win over the query string.
+        const params = new URLSearchParams(url.searchParams)
+        if (method === 'POST' && /application\/x-www-form-urlencoded/i.test(req.headers.get('content-type') ?? '')) {
+          for (const [k, v] of new URLSearchParams(await req.text())) params.set(k, v)
+        }
+        return await this.oauth.callback(params, (userId) => this.sessionTokensFor(userId))
       }
       if (path.startsWith('admin/')) return await this.admin(req, ctx, path, method)
       return authError(404, 'not_found', `unknown auth endpoint: ${path}`)
@@ -615,45 +661,125 @@ export class AuthHandler {
       const authCode = body.auth_code
       const verifier = body.code_verifier
       if (!authCode || !verifier) return authError(400, 'validation_failed', 'auth_code and code_verifier required')
-      const userId = await this.oauth.exchangePkce(authCode, verifier)
-      if (!userId) return authError(403, 'flow_state_not_found', 'invalid or expired auth code')
-      const ures = await this.db.query(`select * from auth.users where id = $1`, [userId])
-      return json(200, await this.sessionFor(ures.rows[0] as UserRow))
+      const exchanged = await this.oauth.exchangePkce(authCode, verifier)
+      if (!exchanged) return authError(403, 'flow_state_not_found', 'invalid or expired auth code')
+      const ures = await this.db.query(`select * from auth.users where id = $1`, [exchanged.userId])
+      const session = await this.sessionFor(ures.rows[0] as UserRow)
+      // GoTrue: after an OAuth sign-in the session carries the provider's own tokens
+      if (exchanged.providerToken) session.provider_token = exchanged.providerToken
+      if (exchanged.providerRefreshToken) session.provider_refresh_token = exchanged.providerRefreshToken
+      return json(200, session)
     }
 
-    if (grantType === 'id_token') return this.idTokenGrant(body)
+    if (grantType === 'id_token') return this.idTokenGrant(req, body as Record<string, unknown>)
 
     return authError(400, 'invalid_grant', `unsupported grant_type: ${grantType}`)
   }
 
   /**
-   * POST /token?grant_type=id_token - supabase.auth.signInWithIdToken({ provider,
-   * token, nonce }): native Sign in with Apple / Google. The token is checked
-   * against the provider's keys and this project's client ids, then the user is
-   * found or created exactly as the OAuth callback does.
+   * POST /token?grant_type=id_token - supabase.auth.signInWithIdToken({ provider, token, nonce, access_token })
+   * and linkIdentity with an ID token (link_identity). GoTrue's IdTokenGrant: the same parameters, checks,
+   * order and error bodies (OAuth errors are HTTP 400 `{ error, error_description }`).
    */
-  private async idTokenGrant(body: Record<string, string>): Promise<Response> {
-    const provider = String(body.provider ?? '').toLowerCase()
-    const token = body.id_token
-    if (!provider || !token) return authError(400, 'validation_failed', 'provider and id_token required')
-    if (this.settings.disabledProviders.includes(provider)) return authError(400, 'provider_disabled', `Unsupported provider: ${provider} is disabled`)
-    const audiences = this.config.idTokenClients?.[provider] ?? []
-    if (!audiences.length) {
-      return authError(400, 'provider_disabled', `Unsupported provider: ${provider} is not enabled (set [auth.external.${provider}] client_id)`)
+  private async idTokenGrant(req: Request, body: Record<string, unknown>): Promise<Response> {
+    const idToken = typeof body.id_token === 'string' ? body.id_token : ''
+    const issuer = typeof body.issuer === 'string' ? body.issuer : ''
+    const clientId = typeof body.client_id === 'string' ? body.client_id : ''
+    let provider = typeof body.provider === 'string' ? body.provider : ''
+    if (!idToken) return oauthError('invalid request', 'id_token required')
+    if (!provider && (!clientId || !issuer)) return oauthError('invalid request', 'provider or client_id and issuer required')
+    if (!provider && isAppleIssuer(issuer)) provider = 'apple'
+    if (!provider && issuer === 'https://accounts.google.com') provider = 'google'
+
+    let linkTo: string | null = null
+    if (body.link_identity === true) {
+      if (!req.headers.get('authorization')) return oauthError('invalid request', 'Linking requires a valid user access token in Authorization')
+      const user = await this.userFromBearer(req)
+      if (!user) return oauthError('invalid request', 'Linking requires a valid user authentication')
+      linkTo = user.id
     }
+
+    if (provider === 'apple') {
+      try {
+        checkAppleIssuer(idToken, issuer || undefined)
+      } catch (e) {
+        if (e instanceof IdTokenError && e.body.kind === 'http') return authError(e.body.status, e.body.code, e.message)
+        throw e
+      }
+    }
+    const enabled = provider in (this.config.idTokenClients ?? {}) && !this.settings.disabledProviders.includes(provider)
+    const issuerLabel = provider === 'apple' ? (isAppleIssuer(issuer) ? issuer : 'https://appleid.apple.com') : provider === 'google' ? 'https://accounts.google.com' : issuer
+    if (!enabled && (provider === 'apple' || provider === 'google')) return authError(400, 'provider_disabled', `Provider (issuer "${issuerLabel}") is not enabled`)
+    const audiences = [...(this.config.idTokenClients?.[provider] ?? [])]
+    if (provider === 'apple' && this.config.iosBundleId) audiences.push(this.config.iosBundleId)
+
     let profile
     try {
-      profile = await verifyIdToken(provider, token, { audiences, nonce: body.nonce || undefined, fetchImpl: this.config.oauthFetch })
+      profile = await verifyIdToken(provider, idToken, {
+        audiences,
+        nonce: typeof body.nonce === 'string' && body.nonce ? body.nonce : undefined,
+        skipNonceCheck: (this.config.skipNonceCheck ?? []).includes(provider),
+        accessToken: typeof body.access_token === 'string' && body.access_token ? body.access_token : undefined,
+        issuer: issuer || undefined,
+        fetchImpl: this.config.oauthFetch,
+      })
     } catch (e) {
       if (!(e instanceof IdTokenError)) throw e
       await this.audit('login_failed', { traits: { grant_type: 'id_token', provider } })
-      return authError(400, 'bad_jwt', e.message)
+      return e.body.kind === 'oauth' ? oauthError(e.body.error, e.body.description) : authError(e.body.status, e.body.code, e.message)
     }
-    const userId = await this.oauth.signInWithProfile(provider, profile)
+
+    let userId: string
+    try {
+      userId = linkTo ? await this.oauth.linkIdentity(linkTo, provider, profile) : await this.oauth.signInWithProfile(provider, profile)
+    } catch (e) {
+      if (e instanceof AuthHttpError) return authError(e.status, e.code, e.message)
+      throw e
+    }
     const ures = await this.db.query(`select * from auth.users where id = $1`, [userId])
     const user = ures.rows[0] as UserRow
-    await this.audit('login', { actorId: user.id, actorEmail: user.email, traits: { grant_type: 'id_token', provider } })
     return json(200, await this.sessionFor(user))
+  }
+
+  /**
+   * GET /user/identities/authorize - supabase.auth.linkIdentity({ provider }): GoTrue's LinkIdentity. The
+   * signed-in user goes through the provider's OAuth flow and the identity is added to them on the callback.
+   * Needs [auth] enable_manual_linking; skip_http_redirect=true answers `{ url }` instead of redirecting.
+   */
+  private async linkIdentityAuthorize(req: Request, url: URL): Promise<Response> {
+    const user = await this.userFromBearer(req)
+    if (!user) return authError(401, 'no_authorization', 'Invalid or expired token')
+    if (!this.settings.manualLinking) return authError(404, 'manual_linking_disabled', 'Manual linking is disabled')
+    const provider = url.searchParams.get('provider') ?? ''
+    const refused = this.unsupportedProvider(provider)
+    if (refused) return refused
+    const target = await this.oauth.authorizeUrl(url, user.id)
+    if (url.searchParams.get('skip_http_redirect') === 'true') return json(200, { url: target })
+    return new Response(null, { status: 302, headers: { location: target } })
+  }
+
+  /** DELETE /user/identities/{id} - supabase.auth.unlinkIdentity(identity): GoTrue's DeleteIdentity. */
+  private async unlinkIdentity(req: Request, identityId: string): Promise<Response> {
+    const user = await this.userFromBearer(req)
+    if (!user) return authError(401, 'no_authorization', 'Invalid or expired token')
+    if (!this.settings.manualLinking) return authError(404, 'manual_linking_disabled', 'Manual linking is disabled')
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identityId)) {
+      return authError(404, 'validation_failed', 'identity_id must be an UUID')
+    }
+    try {
+      await this.oauth.unlinkIdentity(user.id, identityId.toLowerCase())
+    } catch (e) {
+      if (e instanceof AuthHttpError) return authError(e.status, e.code, e.message)
+      throw e
+    }
+    return json(200, {})
+  }
+
+  /** GoTrue's Provider() lookup for an OAuth redirect: an unknown or disabled provider is a 400. */
+  private unsupportedProvider(provider: string): Response | null {
+    if (this.oauth.has(provider) && !this.settings.disabledProviders.includes(provider)) return null
+    const known = GOTRUE_EXTERNAL_PROVIDERS.includes(provider) || this.oauth.has(provider)
+    return authError(400, 'validation_failed', known ? 'Unsupported provider: provider is not enabled' : `Unsupported provider: Provider ${provider} could not be found`)
   }
 
   private async getUser(req: Request): Promise<Response> {
@@ -2458,14 +2584,14 @@ export class AuthHandler {
   }
 
   /** Session tokens for a bare user id (used by the OAuth implicit callback). */
-  private async sessionTokensFor(userId: string): Promise<{ access_token: string; refresh_token: string; expires_in: number }> {
+  private async sessionTokensFor(userId: string): Promise<{ access_token: string; refresh_token: string; expires_in: number; expires_at?: number }> {
     const res = await this.db.query(`select * from auth.users where id = $1`, [userId])
     const session = (await this.sessionFor(res.rows[0] as UserRow)) as {
       access_token: string
       refresh_token: string
       expires_in: number
     }
-    return { access_token: session.access_token, refresh_token: session.refresh_token, expires_in: session.expires_in }
+    return { access_token: session.access_token, refresh_token: session.refresh_token, expires_in: session.expires_in, expires_at: (session as { expires_at?: number }).expires_at }
   }
 
   private async sessionFor(

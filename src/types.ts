@@ -152,6 +152,14 @@ export interface BackendConfig {
   oauthProviders?: Record<string, import('./auth/oauth.js').OAuthProviderConfig>
   /** Native ID-token sign-in: per provider, the accepted client ids (`aud`), e.g. { apple: ['com.acme.app'] }. */
   idTokenClients?: Record<string, string[]>
+  /** Providers whose ID tokens skip the nonce check ([auth.external.<p>] skip_nonce_check). */
+  skipNonceCheck?: string[]
+  /** Providers that may sign in without an email ([auth.external.<p>] email_optional). */
+  emailOptional?: string[]
+  /** GOTRUE_MAILER_ALLOW_UNVERIFIED_EMAIL_SIGN_INS: sign in before confirming an unverified provider email. */
+  allowUnverifiedEmailSignIns?: boolean
+  /** GOTRUE_EXTERNAL_IOS_BUNDLE_ID: also accepted as an Apple ID token audience. */
+  iosBundleId?: string
   /** Injectable fetch for OAuth provider calls (tests point this at a mock provider). */
   oauthFetch?: typeof fetch
   /** Database webhooks: fire HTTP requests on table changes. */

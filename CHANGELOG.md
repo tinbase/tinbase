@@ -6,6 +6,62 @@ All notable changes to tinbase are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Sign in with Apple on the web**, as GoTrue's apple provider: `signInWithOAuth({ provider: 'apple' })` goes to
+  Apple's authorize page with `response_mode=form_post` and the scopes `email name`; Apple's POSTed callback
+  is read (form body); the profile is the verified `id_token` from the token response (Apple has no userinfo
+  endpoint), and the name Apple sends once, in the `user` field, becomes `full_name`. Configure it as on
+  Supabase: `[auth.external.apple] client_id = "<Services ID>,<bundle id>"` (the web flow uses the first,
+  native sign-in accepts them all) and `secret = "<client-secret JWT>"`. A cancel at Apple returns to the
+  app as `#error=user_cancelled_authorize`.
+- **Apple and OAuth parity with supabase/auth (GoTrue)**, checked line by line against its source:
+  - ID tokens from Apple's second issuer `https://account.apple.com` are accepted; an Apple email always
+    counts as verified; Apple identity data is GoTrue's (`iss`, `sub`, `provider_id`, `email_verified`,
+    `phone_verified`, `custom_claims` with `is_private_email` / `auth_time` / `transfer_sub`).
+  - `signInWithIdToken` takes GoTrue's parameters: `issuer` + `client_id` instead of `provider`,
+    `access_token` (checked against `at_hash`), `link_identity` (link to the signed-in user);
+    `[auth.external.<p>] skip_nonce_check`; `GOTRUE_EXTERNAL_IOS_BUNDLE_ID` as an extra Apple audience.
+  - Errors are GoTrue's, word for word: OAuth errors as HTTP 400 `{ error, error_description }` ("Bad ID
+    token", "Unacceptable audience in id_token: [...]", "Nonces mismatch", …) and HTTP errors with its codes
+    (`provider_disabled`, `validation_failed`, `identity_already_exists`, `user_banned`, `signup_disabled`).
+  - Sign-ins (OAuth and ID token) merge the identity data into `user_metadata`, keep
+    `app_metadata.providers` / `provider` in step with the user's identities, refuse banned users and
+    respect `enable_signup = false`.
+  - The OAuth callback redirects with 302 like GoTrue; the implicit fragment adds `expires_at` and `sb` (keys
+    sorted); errors go to the app in the query and the fragment; `/authorize` answers an unknown or
+    disabled provider with a 400 instead of a redirect.
+  - `/settings` lists every provider GoTrue knows (`false` unless enabled), plus `saml_enabled` /
+    `passkeys_enabled`.
+  - Account linking is GoTrue's DetermineAccountLinking: an identity seen before signs in to its user; a
+    verified address links to the one user who has it (as an identity's email or the user's), several is
+    a 500; with the mailer autoconfirming (the default, as `supabase start`), every address counts as
+    verified, as on Supabase.
+  - Unverified provider emails (`[auth.email] enable_confirmations = true`): the user is created with the
+    address unconfirmed (or without it when another user has it), mailed a confirmation, and refused with
+    422 `provider_email_needs_verification`; `GOTRUE_MAILER_ALLOW_UNVERIFIED_EMAIL_SIGN_INS=true` lets them
+    in unconfirmed. An unconfirmed account signed into with a provider loses its password and its other
+    identities (RemoveUnconfirmedIdentities); confirming sets `email_verified` in `user_metadata`.
+  - `[auth.external.<p>] email_optional`; without it a provider that returns no email is refused with
+    "Error getting user email from external provider".
+  - Linking (`link_identity`) to a user without an email takes the identity's email (verified first, never
+    one another user has: 400 `email_exists`), confirms it, and ends an anonymous user's anonymity; an
+    unverified one is mailed and refused with 422 `email_not_confirmed`.
+  - **`linkIdentity` and `unlinkIdentity`**: `GET /user/identities/authorize` (the OAuth round trip, with
+    `skip_http_redirect`) and `DELETE /user/identities/{id}`, behind `[auth] enable_manual_linking`
+    (off by default: 404 `manual_linking_disabled`), with GoTrue's errors (`single_identity_not_deletable`,
+    `identity_not_found`, `email_conflict_identity_not_deletable`).
+  - GitHub's profile reads `/user/emails` (the primary address, each with its verified flag) and asks for
+    `user:email`; Google's comes from the token response's `id_token` (userinfo/v2 only without one) with
+    the Workspace `hd` in `custom_claims`; both store GoTrue's identity data. `/authorize` passes the
+    request's other query parameters on to the provider (never `client_id`, `redirect_uri`, `state`…).
+  - Audit entries for these sign-ins are GoTrue's: `login`, `user_signedup`, `identity_linked`,
+    `identity_unlinked`.
+- OAuth sessions carry the provider's own tokens, as on Supabase: `provider_token` and
+  `provider_refresh_token` in the implicit redirect and in the `grant_type=pkce` exchange (stored on
+  `auth.flow_state` until the exchange; three columns, with `linking_target_id`, added to existing
+  databases).
+
 ## [0.24.0]
 
 ### Added

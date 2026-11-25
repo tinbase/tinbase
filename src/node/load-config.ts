@@ -64,6 +64,14 @@ export interface AuthConfig {
   oauthProviders: Record<string, OAuthProviderConfig>
   /** Native ID-token sign-in client ids from [auth.external.*] client_id (comma-separated), secret not needed */
   idTokenClients: Record<string, string[]>
+  /** [auth.external.<p>] skip_nonce_check = true / GOTRUE_EXTERNAL_<P>_SKIP_NONCE_CHECK */
+  skipNonceCheck: string[]
+  /** [auth.external.<p>] email_optional = true / GOTRUE_EXTERNAL_<P>_EMAIL_OPTIONAL */
+  emailOptional: string[]
+  /** GOTRUE_MAILER_ALLOW_UNVERIFIED_EMAIL_SIGN_INS */
+  allowUnverifiedEmailSignIns: boolean
+  /** GOTRUE_EXTERNAL_IOS_BUNDLE_ID: an extra accepted Apple ID-token audience */
+  iosBundleId?: string
   /**
    * [auth.email.template.*]: per-type `subject` and `content_path`. The path is
    * recorded, not read - loading files is the CLI's job, since config parsing
@@ -146,7 +154,7 @@ export function loadProjectConfig(projectDir: string, env: NodeJS.ProcessEnv = p
 
 function readAuth(root: ConfigTable, env: NodeJS.ProcessEnv): AuthConfig {
   const auth = tableAt(root, 'auth')
-  const out: AuthConfig = { settings: readAuthSettings(root), oauthProviders: readOAuthProviders(root, env), idTokenClients: readIdTokenClients(root, env) }
+  const out: AuthConfig = { settings: readAuthSettings(root), oauthProviders: readOAuthProviders(root, env), idTokenClients: readIdTokenClients(root, env), skipNonceCheck: readProviderFlag(root, env, 'skip_nonce_check', ID_TOKEN_PROVIDERS), emailOptional: readProviderFlag(root, env, 'email_optional'), allowUnverifiedEmailSignIns: env.GOTRUE_MAILER_ALLOW_UNVERIFIED_EMAIL_SIGN_INS === 'true', iosBundleId: env.GOTRUE_EXTERNAL_IOS_BUNDLE_ID || undefined }
 
   const enabled = getBool(auth, 'enabled')
   if (enabled !== undefined) out.enabled = enabled
@@ -281,6 +289,9 @@ function readAuthSettings(root: ConfigTable): Partial<AuthSettings> {
   const anon = getBool(auth, 'enable_anonymous_sign_ins')
   if (anon !== undefined) out.anonymousUsers = anon
 
+  const manualLinking = getBool(auth, 'enable_manual_linking')
+  if (manualLinking !== undefined) out.manualLinking = manualLinking
+
   // enable_confirmations (require email confirmation) is the inverse of autoconfirm;
   // [auth.email] is canonical, top-level [auth] is the legacy alias.
   const confirmations = getBool(email, 'enable_confirmations') ?? getBool(auth, 'enable_confirmations')
@@ -373,8 +384,6 @@ function readOAuthProviders(root: ConfigTable, env: NodeJS.ProcessEnv): Record<s
       const secret = getString(t, 'secret')
       if (!enabled || !clientId || !secret) continue
       const url = getString(t, 'url')
-      // Apple has no web OAuth preset here: its block configures native id_token sign-in only (readIdTokenClients)
-      if (name.toLowerCase() === 'apple' && !url && !getString(t, 'authorize_url')) continue
       out[name.toLowerCase()] = {
         clientId,
         clientSecret: secret,
@@ -423,6 +432,23 @@ function readIdTokenClients(root: ConfigTable, env: NodeJS.ProcessEnv): Record<s
     }
   }
   return out
+}
+
+/**
+ * Providers with `[auth.external.<p>] <key> = true` or GOTRUE_EXTERNAL_<P>_<KEY>=true (skip_nonce_check,
+ * email_optional). `only` limits the env scan to those providers.
+ */
+function readProviderFlag(root: ConfigTable, env: NodeJS.ProcessEnv, key: string, only?: string[]): string[] {
+  const out = new Set<string>()
+  const external = tableAt(root, 'auth.external')
+  if (external) for (const [name, t] of external.children) if (getBool(t, key) === true) out.add(name.toLowerCase())
+  const suffix = `_${key.toUpperCase()}`
+  for (const [k, v] of Object.entries(env)) {
+    if (!k.startsWith('GOTRUE_EXTERNAL_') || !k.endsWith(suffix) || v !== 'true') continue
+    const p = k.slice('GOTRUE_EXTERNAL_'.length, -suffix.length).toLowerCase()
+    if (p && (!only || only.includes(p))) out.add(p)
+  }
+  return [...out]
 }
 
 function collectEnvProviders(
