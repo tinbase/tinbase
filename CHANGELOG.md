@@ -6,6 +6,8 @@ All notable changes to tinbase are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.25.0]
+
 ### Added
 
 - **Sign in with Apple on the web**, as GoTrue's apple provider: `signInWithOAuth({ provider: 'apple' })` goes to
